@@ -240,8 +240,8 @@
     console.log("[CS] Layer 6 Playback & Error Recovery initialized.");
     var recoveryAttempts = 0;
     var MAX_RECOVERY = 3;
+    var pleaseWaitStartTime = null;
 
-    // Force-play paused videos periodically
     setInterval(function () {
         if (!window.location.href.includes("/video/")) return;
 
@@ -249,6 +249,7 @@
         for (var i = 0; i < videos.length; i++) {
             var v = videos[i];
             if (v.paused && v.src && v.duration && v.duration > 0 && !v.ended) {
+                console.log("[CS] ⚠️ Phát hiện video bị pause hoặc load chậm");
                 v.play().catch(function () { });
             }
         }
@@ -266,13 +267,28 @@
         var overlays = document.querySelectorAll(
             '[class*="modal"], [class*="overlay"], [class*="error"], [class*="captcha"], [class*="DivErrorContainer"]'
         );
+        var pleaseWaitFound = false;
         for (var i = 0; i < overlays.length; i++) {
             var text = overlays[i].textContent.toLowerCase();
             if (text.includes("please wait") || text.includes("vui lòng chờ") ||
                 text.includes("try again") || text.includes("thử lại")) {
                 errorDetected = true;
                 errorType = "please_wait";
+                pleaseWaitFound = true;
                 break;
+            }
+        }
+
+        if (pleaseWaitFound) {
+            if (!pleaseWaitStartTime) {
+                pleaseWaitStartTime = Date.now();
+                console.log("[CS] ⚠️ Bắt đầu xuất hiện màn hình 'Please wait / Vui lòng chờ'");
+            }
+        } else {
+            if (pleaseWaitStartTime) {
+                var elapsedSec = ((Date.now() - pleaseWaitStartTime) / 1000).toFixed(1);
+                console.log("[CS] ✅ Màn hình 'Please wait' biến mất sau: " + elapsedSec + " giây.");
+                pleaseWaitStartTime = null;
             }
         }
 
@@ -367,6 +383,10 @@ function watchForVideoElement() {
         }
     }
 
+    if (!targetVideo && videos.length > 0) {
+        targetVideo = videos[0];
+    }
+
     if (!targetVideo || targetVideo === currentVideoElement) return;
 
     if (currentVideoElement) {
@@ -375,6 +395,7 @@ function watchForVideoElement() {
     }
 
     currentVideoElement = targetVideo;
+    console.log("[CS] Chuyển sang video mới");
 
     if (currentVideoElement.hasAttribute("loop")) {
         currentVideoElement.removeAttribute("loop");
@@ -385,6 +406,7 @@ function watchForVideoElement() {
 }
 
 function onVideoEnded() {
+    console.log("[CS] Video đã kết thúc → Gửi yêu cầu playNext");
     timeUpdateTriggered = false;
     requestNextVideo();
 }
@@ -399,6 +421,7 @@ function onVideoTimeUpdate() {
         timeUpdateTriggered = true;
         setTimeout(function () {
             if (timeUpdateTriggered) {
+                console.log("[CS] Video đã kết thúc (Fallback timeupdate) → Gửi yêu cầu playNext");
                 timeUpdateTriggered = false;
                 requestNextVideo();
             }

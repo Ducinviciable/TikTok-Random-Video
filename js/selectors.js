@@ -1,7 +1,7 @@
 // Centralized TikTok DOM selectors
-// When TikTok updates their UI, only this file needs to change.
+// Shared globally across all content script files
 
-const TK_SELECTORS = {
+var TK_SELECTORS = {
     // Liked videos tab & container
     LIKED_CONTAINER: '[data-e2e="user-liked-item-list"]',
     LIKED_ITEM: '[data-e2e="user-liked-item"]',
@@ -22,4 +22,11 @@ const TK_SELECTORS = {
 };
 
 // Text labels for the Liked tab (multi-language)
-const LIKED_TAB_LABELS = ["Đã thích", "Liked", "liked"];
+var LIKED_TAB_LABELS = ["Đã thích", "Liked", "liked"];
+
+// Shared state variables (accessible by all modules)
+var isCollecting = false;
+var collectedMap = new Map();
+var videoWatcherActive = false;
+var currentVideoElement = null;
+var timeUpdateTriggered = false;

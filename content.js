@@ -1,12 +1,7 @@
 // content.js — Main entry point for TikTok content scripts
 // Loads: selectors.js → content-utils.js → content-video.js → content-core.js → this file
-//
-// Shared state variables (accessible by all modules):
-let isCollecting = false;
-let collectedMap = new Map();
-let videoWatcherActive = false;
-let currentVideoElement = null;
-let timeUpdateTriggered = false;
+// State variables are declared globally in selectors.js
+
 
 // Message listener — routes commands from background/popup
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {

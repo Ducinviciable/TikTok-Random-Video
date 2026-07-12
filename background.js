@@ -87,7 +87,11 @@ async function selectRandomVideo(excludeUrl = "") {
     played.push(selectedUrl.split("?")[0]);
     await chrome.storage.local.set({ playedVideos: played });
 
-    return selectedVideo;
+    return {
+        video: selectedVideo,
+        unplayedCount: unplayedPool.length - 1,
+        totalCount: videos.length
+    };
 }
 
 // Check if tab is currently on the user's Liked profile page
@@ -250,11 +254,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function handleSkipAndPlayNext() {
     const tab = await findTikTokTab();
     if (!tab) {
-        const selectedVideo = await selectRandomVideo();
-        if (selectedVideo) {
-            const nextUrl = getUrl(selectedVideo);
+        const result = await selectRandomVideo();
+        if (result) {
+            const nextUrl = getUrl(result.video);
             await chrome.tabs.create({ url: nextUrl, active: true });
-            return { success: true, count: -1, status: "playing" };
+            return { success: true, count: result.totalCount, unplayedCount: result.unplayedCount, status: "playing" };
         }
         return { success: false, status: "no_videos", message: "Không tìm thấy tab TikTok và danh sách video trống." };
     }
@@ -267,13 +271,13 @@ async function handleSkipAndPlayNext() {
     await chrome.storage.local.set({ likedVideos: filtered });
 
     if (filtered.length > 0) {
-        const nextVideo = await selectRandomVideo(currentUrl);
-        if (nextVideo) {
+        const result = await selectRandomVideo(currentUrl);
+        if (result) {
             // Brief delay before skip transition to appear natural
             await randomDelay(800, 2000);
-            const nextUrl = getUrl(nextVideo);
+            const nextUrl = getUrl(result.video);
             await chrome.tabs.update(tab.id, { url: nextUrl });
-            return { success: true, count: filtered.length, status: "playing" };
+            return { success: true, count: result.totalCount, unplayedCount: result.unplayedCount, status: "playing" };
         }
     }
     return { success: false, status: "no_videos", message: "Danh sách video đã trống." };
@@ -286,11 +290,11 @@ async function handleRandomLiked(limit = 100, username = "") {
     const age = Date.now() - (data.collectedAt || 0);
 
     if (videos.length > 0 && age < MAX_AGE) {
-        const randomVideo = await selectRandomVideo();
-        if (randomVideo) {
-            const randomUrl = getUrl(randomVideo);
+        const result = await selectRandomVideo();
+        if (result) {
+            const randomUrl = getUrl(result.video);
             await getOrCreateTikTokTab(randomUrl);
-            return { success: true, count: videos.length, status: "playing" };
+            return { success: true, count: result.totalCount, unplayedCount: result.unplayedCount, status: "playing" };
         }
     }
 
@@ -364,11 +368,11 @@ async function handleCollectAndPlay(tabId) {
     const videos = data.likedVideos || [];
 
     if (videos.length > 0) {
-        const randomVideo = await selectRandomVideo();
-        if (randomVideo) {
-            const randomUrl = getUrl(randomVideo);
+        const result = await selectRandomVideo();
+        if (result) {
+            const randomUrl = getUrl(result.video);
             await chrome.tabs.update(tabId, { url: randomUrl });
-            return { success: true, count: videos.length };
+            return { success: true, count: result.totalCount };
         }
     }
     return { success: false, message: "Không tìm thấy video nào" };
@@ -393,11 +397,11 @@ async function handlePlayNext(tabId) {
         currentUrl = tab.url.split("?")[0];
     } catch (e) { }
 
-    const selectedVideo = await selectRandomVideo(currentUrl);
-    if (selectedVideo) {
+    const result = await selectRandomVideo(currentUrl);
+    if (result) {
         // Random delay 2-5s before navigating to avoid rate limiting
         await randomDelay(2000, 5000);
-        const nextUrl = getUrl(selectedVideo);
+        const nextUrl = getUrl(result.video);
         await chrome.tabs.update(tabId, { url: nextUrl });
         return { success: true };
     }

@@ -61,12 +61,12 @@ function startProgressPoller() {
             const limit = progress.limit || 100;
 
             if (progress.status === "catchup") {
-                statusEl.textContent = `🔄 Đang cuộn bỏ qua các video cũ đã lưu...`;
+                statusEl.textContent = `🔄 Đang lọc trùng... Đã phát hiện ${progress.count} video cũ.`;
             } else {
-                statusEl.textContent = `🔄 Đang thu thập... (${current}/${limit})`;
+                statusEl.textContent = `🔄 Đang thu thập... Đã lấy ${current}/${limit} video mới (Tổng: ${progress.count})`;
             }
             statusEl.className = "status loading";
-            
+
             updateCountText(progress.count);
         } else {
             clearInterval(progressInterval);
@@ -82,7 +82,7 @@ function startProgressPoller() {
                 statusEl.textContent = `✅ Thu thập video thành công! Tổng số: ${totalCount} video`;
             }
             statusEl.className = "status success";
-            
+
             setLoading(false);
             refreshCount();
 
@@ -136,7 +136,7 @@ randomBtn.addEventListener("click", async () => {
     statusEl.className = "status loading";
 
     const hasCache = await sendMsg({ action: "getVideoCount" }).then(res => res && res.count > 0);
-    
+
     if (!hasCache && !checkUsernameFilled()) {
         setLoading(false);
         return;
@@ -153,11 +153,11 @@ randomBtn.addEventListener("click", async () => {
         setLoading(false);
     } else if (response.success) {
         if (response.status === "playing") {
-            statusEl.textContent = "✅ Đang mở video random! (" + response.count + " video)";
+            statusEl.textContent = `✅ Đang mở video random!`;
             statusEl.className = "status success";
             setLoading(false);
         } else if (response.status === "navigating") {
-            statusEl.textContent = "🔄 Đang mở trang cá nhân để click tab Đã thích...";
+            statusEl.textContent = "🔄 Đang chuyển hướng đến trang cá nhân để quét video...";
             statusEl.className = "status loading";
             startProgressPoller();
         } else {
@@ -188,7 +188,7 @@ skipBtn.addEventListener("click", async () => {
         statusEl.textContent = "❌ Extension lỗi, thử reload extension.";
         statusEl.className = "status error";
     } else if (response.success) {
-        statusEl.textContent = "✅ Đã xoá & mở video tiếp! (" + response.count + " còn lại)";
+        statusEl.textContent = `✅ Đã xoá & mở video tiếp!`;
         statusEl.className = "status success";
         refreshCount();
     } else {
@@ -208,7 +208,7 @@ skipBtn.addEventListener("click", async () => {
 // Recollect from scratch button click handler
 refreshBtn.addEventListener("click", async () => {
     setLoading(true);
-    
+
     if (!checkUsernameFilled()) {
         setLoading(false);
         return;
@@ -229,7 +229,7 @@ refreshBtn.addEventListener("click", async () => {
 
     const response = await sendMsg({ action: "randomLiked", limit: limit, username: username });
     if (response && response.success) {
-        statusEl.textContent = "🔄 Đang mở trang cá nhân để click tab Đã thích...";
+        statusEl.textContent = "🔄 Đang chuyển hướng đến trang cá nhân để quét lại...";
         statusEl.className = "status loading";
         startProgressPoller();
     } else {
@@ -257,7 +257,7 @@ collectMoreBtn.addEventListener("click", async () => {
         if (response.status === "collecting_in_place") {
             statusEl.textContent = "🔄 Đang cuộn tiếp tại chỗ để quét thêm video...";
         } else {
-            statusEl.textContent = "🔄 Đang mở trang cá nhân để quét thêm video...";
+            statusEl.textContent = "🔄 Đang chuyển hướng đến trang cá nhân để quét thêm...";
         }
         statusEl.className = "status loading";
         startProgressPoller();
@@ -297,7 +297,7 @@ async function renderVideoList() {
 
         const img = document.createElement("img");
         img.className = "video-thumbnail";
-        
+
         const isPlaceholder = !thumb || thumb.startsWith("data:image") || thumb.startsWith("blob:");
         img.src = isPlaceholder ? "icons/icon.png" : thumb;
         img.onerror = () => { img.src = "icons/icon.png"; };
