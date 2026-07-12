@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="header">
+        <h3>TikTok Random Liked ❤️</h3>
+        <div class="subtitle">Xem ngẫu nhiên video đã thích</div>
+    </div>
+
+    <div class="video-count" id="videoCount" title="Click để xem danh sách">0 video đã thu thập (click xem)</div>
+    <div class="cache-time" id="cacheTime">Cache: Đang kiểm tra...</div>
+
+    <div class="video-list-wrapper" id="videoListWrapper">
+        <div class="empty-list">Chưa có video nào.</div>
+    </div>
+
+    <div class="btn-group">
+        <button id="randomBtn">Random Video Đã Like 🎲 </button>
+        <button id="skipBtn">Bỏ qua &amp; Xoá video này ⏭️ </button>
+        <button id="refreshBtn">Thu thập lại từ đầu 🔄 </button>
+        <button id="collectMoreBtn">Thu thập thêm video ➕</button>
+    </div>
+
+    <div class="setting-group">
+        <div class="limit-row">
+            <span class="limit-label">ID TikTok của bạn (@):</span>
+            <input type="text" id="usernameInput" placeholder="@username">
+        </div>
+        <div class="limit-row">
+            <span class="limit-label">Số lượng video cần thu thập:</span>
+            <input type="number" id="limitInput" value="100" min="10" max="1000" step="10">
+        </div>
+    </div>
+
+    <div class="toggle-row">
+        <span class="toggle-label">
+            <span class="icon">⏭️</span> Tự chuyển video
+        </span>
+        <label class="toggle-switch">
+            <input type="checkbox" id="autoNextToggle" checked>
+            <span class="toggle-slider"></span>
+        </label>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

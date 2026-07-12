@@ -1,0 +1,51 @@
+{
+    "manifest_version": 3,
+    "name": "TikTok Random Liked",
+    "version": "3.0",
+    "description": "Random xem video đã Like trên TikTok",
+    "permissions": [
+        "activeTab",
+        "tabs",
+        "scripting",
+        "storage"
+    ],
+    "host_permissions": [
+        "https://www.tiktok.com/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon.png",
+            "48": "icons/icon.png",
+            "128": "icons/icon.png"
+        }
+    },
+    "commands": {
+        "skip-and-delete": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+9",
+                "mac": "Command+Shift+9"
+            },
+            "description": "Bỏ qua và xoá video đang phát",
+            "global": true
+        }
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://www.tiktok.com/*"
+            ],
+            "js": [
+                "js/selectors.js",
+                "js/content-utils.js",
+                "js/content-video.js",
+                "js/content-core.js",
+                "content.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ]
+}
