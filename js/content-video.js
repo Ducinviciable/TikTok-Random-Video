@@ -389,61 +389,99 @@ function watchForVideoElement() {
 
     if (!targetVideo || targetVideo === currentVideoElement) return;
 
+    // Cleanup previous video
     if (currentVideoElement) {
         currentVideoElement.removeEventListener("ended", onVideoEnded);
         currentVideoElement.removeEventListener("timeupdate", onVideoTimeUpdate);
     }
+    if (loopObserver) {
+        loopObserver.disconnect();
+        loopObserver = null;
+    }
 
     currentVideoElement = targetVideo;
     playNextRequested = false;
+    timeUpdateTriggered = false;
     console.log("[CS] Chuyển sang video mới");
 
-    if (currentVideoElement.hasAttribute("loop")) {
-        currentVideoElement.removeAttribute("loop");
+    // CRITICAL: Keep loop ON to prevent TikTok's auto-advance to next feed video
+    // TikTok's internal code listens for the "ended" event and auto-scrolls.
+    // By keeping loop, "ended" never fires → TikTok never auto-advances.
+    if (!currentVideoElement.hasAttribute("loop")) {
+        currentVideoElement.setAttribute("loop", "");
     }
 
-    currentVideoElement.addEventListener("ended", onVideoEnded);
+    // Guard: Watch for TikTok re-removing the loop attribute
+    loopObserver = new MutationObserver(function () {
+        if (currentVideoElement && !currentVideoElement.hasAttribute("loop") && !playNextRequested) {
+            currentVideoElement.setAttribute("loop", "");
+            console.log("[CS] ⚠️ TikTok removed loop attribute — re-added it");
+        }
+    });
+    loopObserver.observe(currentVideoElement, { attributes: true, attributeFilter: ["loop"] });
+
+    // timeupdate is the PRIMARY detection method (ended won't fire with loop on)
     currentVideoElement.addEventListener("timeupdate", onVideoTimeUpdate);
+    // ended is a SAFETY NET only (fires if loop is somehow removed)
+    currentVideoElement.addEventListener("ended", onVideoEnded);
 }
 
+// Safety net — only fires if loop attribute was somehow removed
 function onVideoEnded() {
     if (playNextRequested) return;
-    console.log("[CS] Video đã kết thúc → Gửi yêu cầu playNext");
+    console.log("[CS] Video đã kết thúc (ended event) → Gửi yêu cầu playNext");
     timeUpdateTriggered = false;
     requestNextVideo();
 }
 
+// PRIMARY end-of-video detection — fires while loop is on
 function onVideoTimeUpdate() {
-    if (timeUpdateTriggered || playNextRequested) return;
+    if (playNextRequested) return;
 
     const video = currentVideoElement;
-    if (!video || !video.duration || video.duration === Infinity) return;
+    if (!video || !video.duration || video.duration === Infinity || video.duration < 1) return;
 
-    if (video.duration - video.currentTime < 0.3 && video.duration > 1) {
-        timeUpdateTriggered = true;
-        setTimeout(function () {
-            if (timeUpdateTriggered && !playNextRequested) {
-                console.log("[CS] Video đã kết thúc (Fallback timeupdate) → Gửi yêu cầu playNext");
-                timeUpdateTriggered = false;
-                requestNextVideo();
-            }
-        }, 2000);
+    var remaining = video.duration - video.currentTime;
+
+    if (remaining < 0.5 && remaining >= 0) {
+        playNextRequested = true;
+
+        // Remove loop and pause to prevent loop-restart during navigation delay
+        if (loopObserver) {
+            loopObserver.disconnect();
+            loopObserver = null;
+        }
+        video.removeAttribute("loop");
+        video.pause();
+
+        console.log("[CS] Video gần hết (" + remaining.toFixed(2) + "s còn lại) → Tạm dừng & chuyển video");
+        requestNextVideo();
     }
 }
 
 function requestNextVideo() {
-    if (playNextRequested) return;
-    playNextRequested = true;
+    if (playNextRequested !== true) {
+        playNextRequested = true;
+    }
     console.log("[CS] → Sending playNext to background");
     try {
         chrome.runtime.sendMessage({ action: "playNext" }, function () {
             if (chrome.runtime.lastError) {
-                // Reset flag so retry is possible if background is unavailable
+                console.warn("[CS] playNext failed:", chrome.runtime.lastError.message);
                 playNextRequested = false;
+                // Try to resume video if navigation failed
+                if (currentVideoElement) {
+                    currentVideoElement.setAttribute("loop", "");
+                    currentVideoElement.play().catch(function () { });
+                }
             }
         });
     } catch (e) {
         playNextRequested = false;
+        if (currentVideoElement) {
+            currentVideoElement.setAttribute("loop", "");
+            currentVideoElement.play().catch(function () { });
+        }
     }
 }
 
