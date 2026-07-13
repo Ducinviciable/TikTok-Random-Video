@@ -88,6 +88,7 @@ const urlObserver = new MutationObserver(function () {
         lastUrl = window.location.href;
         currentVideoElement = null;
         timeUpdateTriggered = false;
+        playNextRequested = false;
 
         if (lastUrl.includes("/video/")) {
             setTimeout(function () {

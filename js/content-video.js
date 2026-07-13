@@ -395,6 +395,7 @@ function watchForVideoElement() {
     }
 
     currentVideoElement = targetVideo;
+    playNextRequested = false;
     console.log("[CS] Chuyển sang video mới");
 
     if (currentVideoElement.hasAttribute("loop")) {
@@ -406,13 +407,14 @@ function watchForVideoElement() {
 }
 
 function onVideoEnded() {
+    if (playNextRequested) return;
     console.log("[CS] Video đã kết thúc → Gửi yêu cầu playNext");
     timeUpdateTriggered = false;
     requestNextVideo();
 }
 
 function onVideoTimeUpdate() {
-    if (timeUpdateTriggered) return;
+    if (timeUpdateTriggered || playNextRequested) return;
 
     const video = currentVideoElement;
     if (!video || !video.duration || video.duration === Infinity) return;
@@ -420,7 +422,7 @@ function onVideoTimeUpdate() {
     if (video.duration - video.currentTime < 0.3 && video.duration > 1) {
         timeUpdateTriggered = true;
         setTimeout(function () {
-            if (timeUpdateTriggered) {
+            if (timeUpdateTriggered && !playNextRequested) {
                 console.log("[CS] Video đã kết thúc (Fallback timeupdate) → Gửi yêu cầu playNext");
                 timeUpdateTriggered = false;
                 requestNextVideo();
@@ -430,11 +432,19 @@ function onVideoTimeUpdate() {
 }
 
 function requestNextVideo() {
+    if (playNextRequested) return;
+    playNextRequested = true;
+    console.log("[CS] → Sending playNext to background");
     try {
         chrome.runtime.sendMessage({ action: "playNext" }, function () {
-            if (chrome.runtime.lastError) { }
+            if (chrome.runtime.lastError) {
+                // Reset flag so retry is possible if background is unavailable
+                playNextRequested = false;
+            }
         });
-    } catch (e) { }
+    } catch (e) {
+        playNextRequested = false;
+    }
 }
 
 function initVideoWatcher() {

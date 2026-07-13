@@ -30,3 +30,4 @@ var collectedMap = new Map();
 var videoWatcherActive = false;
 var currentVideoElement = null;
 var timeUpdateTriggered = false;
+var playNextRequested = false;

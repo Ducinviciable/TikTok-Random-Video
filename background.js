@@ -16,6 +16,103 @@ let progressState = {
     status: "idle"
 };
 
+// Global job tracking for page loading monitoring
+let activeCollectionJob = null;
+
+function startCollectionJob(tabId, limit, username, appendMode, autoPlay) {
+    if (activeCollectionJob) {
+        clearTimeout(activeCollectionJob.timeoutId);
+        clearInterval(activeCollectionJob.checkIntervalId);
+    }
+
+    activeCollectionJob = {
+        tabId: tabId,
+        limit: limit,
+        username: username,
+        appendMode: appendMode,
+        autoPlay: autoPlay,
+        attempts: 0
+    };
+
+    runJobCycle();
+}
+
+function runJobCycle() {
+    if (!activeCollectionJob) return;
+    const job = activeCollectionJob;
+    job.attempts++;
+
+    console.log(`[BG] Collection job cycle: Attempt #${job.attempts}`);
+
+    // Set a maximum timeout of 20 seconds for the entire loading + injection phase
+    job.timeoutId = setTimeout(() => {
+        if (activeCollectionJob === job) {
+            console.warn("[BG] Collection job timed out (took too long). Reloading tab and retrying...");
+            chrome.tabs.reload(job.tabId, {}, () => {
+                setTimeout(runJobCycle, 2000);
+            });
+        }
+    }, 20000);
+
+    // Periodically check tab title, URL and try to ping the content script
+    let pingAttempts = 0;
+    job.checkIntervalId = setInterval(() => {
+        if (activeCollectionJob !== job) {
+            clearInterval(job.checkIntervalId);
+            return;
+        }
+
+        chrome.tabs.get(job.tabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) {
+                console.warn("[BG] Tab not found or closed. Canceling collection job.");
+                clearInterval(job.checkIntervalId);
+                clearTimeout(job.timeoutId);
+                if (activeCollectionJob === job) activeCollectionJob = null;
+                return;
+            }
+
+            // Detect 403 or Access Denied in tab title
+            const title = (tab.title || "").toLowerCase();
+            if (title.includes("403") || title.includes("access denied") || title.includes("forbidden") || title.includes("error")) {
+                console.warn(`[BG] Detected block/error page: "${tab.title}". Reloading tab in 5 seconds...`);
+                clearInterval(job.checkIntervalId);
+                clearTimeout(job.timeoutId);
+
+                setTimeout(() => {
+                    if (activeCollectionJob === job) {
+                        chrome.tabs.reload(job.tabId, {}, () => {
+                            setTimeout(runJobCycle, 2000);
+                        });
+                    }
+                }, 5000);
+                return;
+            }
+
+            // Try to ping content script
+            chrome.tabs.sendMessage(job.tabId, { action: "ping" }, (response) => {
+                if (chrome.runtime.lastError || !response || !response.alive) {
+                    pingAttempts++;
+                    console.log(`[BG] Ping content script failed (attempt ${pingAttempts})`);
+                    return;
+                }
+
+                // Content script is alive! Stop timers and send the collection command
+                console.log("[BG] Content script is alive. Sending clickLikedTabAndCollect message.");
+                clearInterval(job.checkIntervalId);
+                clearTimeout(job.timeoutId);
+                activeCollectionJob = null;
+
+                chrome.tabs.sendMessage(job.tabId, {
+                    action: "clickLikedTabAndCollect",
+                    append: job.appendMode,
+                    autoPlay: job.autoPlay,
+                    limit: job.limit
+                }).catch(() => { });
+            });
+        });
+    }, 2000);
+}
+
 // Helper: Extract clean URL from item object or string
 function getUrl(item) {
     if (!item) return "";
@@ -303,19 +400,8 @@ async function handleRandomLiked(limit = 100, username = "") {
 
     const tab = await getOrCreateTikTokTab(profileUrl);
 
-    chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-        if (tabId === tab.id && changeInfo.status === "complete") {
-            chrome.tabs.onUpdated.removeListener(listener);
-            setTimeout(() => {
-                chrome.tabs.sendMessage(tab.id, {
-                    action: "clickLikedTabAndCollect",
-                    append: false,
-                    autoPlay: true,
-                    limit: limit
-                }).catch(() => { });
-            }, 2500);
-        }
-    });
+    // Monitor tab loading, error pages (403), and triggers collection automatically
+    startCollectionJob(tab.id, limit, username, false, true);
 
     return { success: true, status: "navigating" };
 }
@@ -343,21 +429,8 @@ async function handleCollectMore(limit = 100, username = "") {
 
     const targetTab = await getOrCreateTikTokTab(profileUrl);
 
-    const sendCollectMore = () => {
-        chrome.tabs.sendMessage(targetTab.id, {
-            action: "clickLikedTabAndCollect",
-            append: true,
-            autoPlay: false,
-            limit: limit
-        }).catch(() => { });
-    };
-
-    chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
-        if (tabId === targetTab.id && changeInfo.status === "complete") {
-            chrome.tabs.onUpdated.removeListener(listener);
-            setTimeout(sendCollectMore, 2500);
-        }
-    });
+    // Monitor tab loading, error pages (403), and triggers collection automatically
+    startCollectionJob(targetTab.id, limit, username, true, false);
 
     return { success: true, status: "navigating" };
 }
