@@ -219,30 +219,31 @@ function startCollection(autoPlay, appendMode, targetLimit, continueFromCurrent)
 
                 const newCollectedCount = collectedMap.size - existingUrls.size;
 
-            try {
-                chrome.runtime.sendMessage({
-                    action: "collectionProgress",
-                    isCollecting: false,
-                    scrollCount: maxScrolls,
-                    maxScrolls: maxScrolls,
-                    count: collectedMap.size,
-                    newCount: newCollectedCount,
-                    limit: targetLimit,
-                    status: "complete"
-                }, function () { if (chrome.runtime.lastError) { } });
-            } catch (e) { }
+                try {
+                    chrome.runtime.sendMessage({
+                        action: "collectionProgress",
+                        isCollecting: false,
+                        scrollCount: maxScrolls,
+                        maxScrolls: maxScrolls,
+                        count: collectedMap.size,
+                        newCount: newCollectedCount,
+                        limit: targetLimit,
+                        status: "complete"
+                    }, function () { if (chrome.runtime.lastError) { } });
+                } catch (e) { }
 
-            isCollecting = false;
+                isCollecting = false;
 
-            if (autoPlay && collectedMap.size > 0) {
-                setTimeout(function () {
-                    try {
-                        chrome.runtime.sendMessage({ action: "collectAndPlay" }, function () {
-                            if (chrome.runtime.lastError) { }
-                        });
-                    } catch (e) { }
-                }, 500);
-            }
+                if (autoPlay && collectedMap.size > 0) {
+                    setTimeout(function () {
+                        try {
+                            chrome.runtime.sendMessage({ action: "collectAndPlay" }, function () {
+                                if (chrome.runtime.lastError) { }
+                            });
+                        } catch (e) { }
+                    }, 500);
+                }
+            });
         });
     };
 

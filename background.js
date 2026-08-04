@@ -73,7 +73,7 @@ function runJobCycle() {
 
             // Detect 403 or Access Denied in tab title
             const title = (tab.title || "").toLowerCase();
-            if (title.includes("403") || title.includes("access denied") || title.includes("forbidden") || title.includes("error")) {
+            if (title.includes("403") || title.includes("denied") || title.includes("forbidden")) {
                 console.warn(`[BG] Detected block/error page: "${tab.title}". Reloading tab in 5 seconds...`);
                 clearInterval(job.checkIntervalId);
                 clearTimeout(job.timeoutId);
@@ -121,16 +121,19 @@ function getUrl(item) {
 
 // Helper: Find or open a TikTok tab, focus it, and direct it to targetUrl
 async function getOrCreateTikTokTab(targetUrl) {
-    const activeTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    let tab = activeTabs[0];
-    if (tab && tab.url && tab.url.includes("tiktok.com")) {
+    // Search ALL windows (not just lastFocusedWindow) so popup opening doesn't hide TikTok tabs
+    const allTikTokTabs = await chrome.tabs.query({ url: "*://*.tiktok.com/*" });
+
+    // Prefer the already-active tab if it's TikTok
+    const activeTabs = await chrome.tabs.query({ active: true });
+    const activeTikTok = activeTabs.find(t => t.url && t.url.includes("tiktok.com"));
+    if (activeTikTok) {
         if (targetUrl) {
-            await chrome.tabs.update(tab.id, { url: targetUrl });
+            await chrome.tabs.update(activeTikTok.id, { url: targetUrl, active: true });
         }
-        return tab;
+        return activeTikTok;
     }
 
-    const allTikTokTabs = await chrome.tabs.query({ url: "*://*.tiktok.com/*", lastFocusedWindow: true });
     if (allTikTokTabs.length > 0) {
         const targetTab = allTikTokTabs[0];
         await chrome.tabs.update(targetTab.id, { active: true });
@@ -143,13 +146,14 @@ async function getOrCreateTikTokTab(targetUrl) {
     return await chrome.tabs.create({ url: targetUrl || "https://www.tiktok.com", active: true });
 }
 
-// Helper: Locate any existing TikTok tab (prioritizes active tab)
+// Helper: Locate any existing TikTok tab (prioritizes active tab across all windows)
 async function findTikTokTab() {
-    const activeTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    let tab = activeTabs[0];
-    if (tab && tab.url && tab.url.includes("tiktok.com")) {
-        return tab;
-    }
+    // Check active tabs across all windows first
+    const activeTabs = await chrome.tabs.query({ active: true });
+    const activeTikTok = activeTabs.find(t => t.url && t.url.includes("tiktok.com"));
+    if (activeTikTok) return activeTikTok;
+
+    // Fall back to any TikTok tab in any window
     const allTikTokTabs = await chrome.tabs.query({ url: "*://*.tiktok.com/*" });
     if (allTikTokTabs.length > 0) {
         return allTikTokTabs[0];
@@ -480,27 +484,28 @@ async function handleBanAndPlayNext() {
         return { success: false, status: "no_videos", message: "Không tìm thấy tab TikTok và danh sách video trống." };
     }
 
-    const currentUrl = tab.url.split("?")[0];
+    const rawUrl = tab.url || "";
+    const currentUrl = rawUrl.split("?")[0];
     const data = await chrome.storage.local.get(["likedVideos", "blacklistedVideos"]);
-    const videos = data.likedVideos || [];
-    const blacklist = data.blacklistedVideos || [];
+    let videos = data.likedVideos || [];
+    let blacklist = data.blacklistedVideos || [];
 
-    const filtered = videos.filter(v => getUrl(v).split("?")[0] !== currentUrl);
-    if (currentUrl && !blacklist.includes(currentUrl)) {
-        blacklist.push(currentUrl);
+    if (currentUrl.includes("/video/")) {
+        videos = videos.filter(v => getUrl(v).split("?")[0] !== currentUrl);
+        if (!blacklist.includes(currentUrl)) {
+            blacklist.push(currentUrl);
+        }
+        await chrome.storage.local.set({
+            likedVideos: videos,
+            blacklistedVideos: blacklist
+        });
+        console.log(`[BG] Banned video: ${currentUrl}. Total banned: ${blacklist.length}`);
     }
 
-    await chrome.storage.local.set({
-        likedVideos: filtered,
-        blacklistedVideos: blacklist
-    });
-
-    console.log(`[BG] Banned video: ${currentUrl}. Total banned: ${blacklist.length}`);
-
-    if (filtered.length > 0) {
+    if (videos.length > 0) {
         const result = await selectRandomVideo(currentUrl);
         if (result) {
-            await randomDelay(800, 2000);
+            await randomDelay(200, 500);
             const nextUrl = getUrl(result.video);
             await chrome.tabs.update(tab.id, { url: nextUrl });
             return { success: true, count: result.totalCount, unplayedCount: result.unplayedCount, status: "playing" };
@@ -511,11 +516,10 @@ async function handleBanAndPlayNext() {
 
 // Randomly choose and play a video from the liked list
 async function handleRandomLiked(limit = 100, username = "") {
-    const data = await chrome.storage.local.get(["likedVideos", "collectedAt"]);
+    const data = await chrome.storage.local.get(["likedVideos"]);
     const videos = data.likedVideos || [];
-    const age = Date.now() - (data.collectedAt || 0);
 
-    if (videos.length > 0 && age < MAX_AGE) {
+    if (videos.length > 0) {
         const result = await selectRandomVideo();
         if (result) {
             const randomUrl = getUrl(result.video);
@@ -629,6 +633,35 @@ chrome.runtime.onInstalled.addListener(() => {
     console.log("[BG] Extension installed/updated, cache cleared");
 });
 
+// Helper: Check if tab title or URL indicates 403 / Access Denied / Chrome Error page
+function is403OrErrorTab(tab) {
+    if (!tab) return false;
+    const title = (tab.title || "").toLowerCase();
+    const url = (tab.url || "").toLowerCase();
+
+    // Check title keywords (covers "Access to www.tiktok.com was denied", "HTTP ERROR 403", etc.)
+    if (
+        title.includes("denied") ||
+        title.includes("403") ||
+        title.includes("forbidden") ||
+        title.includes("just a moment") ||
+        title.includes("access to") ||
+        title.includes("site can't be reached") ||
+        title.includes("cannot be reached") ||
+        title.includes("error") ||
+        title.includes("blocked")
+    ) {
+        return true;
+    }
+
+    // Check Chrome/Edge error page URL
+    if (url.includes("chrome-error") || url.includes("edge-error")) {
+        return true;
+    }
+
+    return false;
+}
+
 // Global keyboard shortcut triggers
 chrome.commands.onCommand.addListener((command) => {
     if (command === "skip-and-delete") {
@@ -643,19 +676,35 @@ chrome.commands.onCommand.addListener((command) => {
 // Auto-recover when TikTok tab encounters 403, Access Denied, Forbidden or blank page
 let last403TriggerTime = 0;
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if ((changeInfo.title || changeInfo.status === "complete") && tab.url && tab.url.includes("tiktok.com")) {
-        const title = (tab.title || "").toLowerCase();
-        if (title.includes("403") || title.includes("access denied") || title.includes("forbidden") || title.includes("just a moment")) {
+    if (tab && tab.url && (tab.url.includes("tiktok.com") || tab.url.includes("chrome-error") || tab.url.includes("edge-error"))) {
+        if (is403OrErrorTab(tab)) {
             const now = Date.now();
-            if (now - last403TriggerTime > 5000) { // Throttling 5s
+            if (now - last403TriggerTime > 4000) { // Throttling 4s
                 last403TriggerTime = now;
-                console.warn(`[BG] Detected 403 / Access Denied tab title ("${tab.title}"). Auto-triggering randomLiked in 2 seconds...`);
+                console.warn(`[BG] Detected 403/Access Denied/Error tab (title: "${tab.title}", url: "${tab.url}"). Auto-triggering randomLiked in 1.5s...`);
                 setTimeout(() => {
                     chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
                         handleRandomLiked(data.targetLimit || 100, data.tiktokUsername || "");
                     });
-                }, 2000);
+                }, 1500);
             }
         }
     }
 });
+
+// Watchdog interval: Periodically check if active TikTok tab is stuck on 403 / Access Denied error page
+setInterval(async () => {
+    try {
+        const tab = await findTikTokTab();
+        if (tab && is403OrErrorTab(tab)) {
+            const now = Date.now();
+            if (now - last403TriggerTime > 4000) {
+                last403TriggerTime = now;
+                console.warn(`[BG Watchdog] Active TikTok tab is in 403/Error state ("${tab.title}"). Auto-switching to next random video...`);
+                chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
+                    handleRandomLiked(data.targetLimit || 100, data.tiktokUsername || "");
+                });
+            }
+        }
+    } catch (e) { }
+}, 4000);

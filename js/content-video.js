@@ -316,8 +316,8 @@ function showToast(message, type) {
         var bodyText = document.body ? document.body.innerText.substring(0, 500).toLowerCase() : "";
         var isBlankPage = document.body && document.body.children.length <= 2 && bodyText.trim().length === 0;
 
-        if (title.includes("403") || title.includes("access denied") || title.includes("forbidden") ||
-            bodyText.includes("403 forbidden") || bodyText.includes("access denied") || isBlankPage) {
+        if (title.includes("403") || title.includes("denied") || title.includes("forbidden") || title.includes("error") ||
+            bodyText.includes("403") || bodyText.includes("denied") || bodyText.includes("forbidden") || isBlankPage) {
             errorDetected = true;
             errorType = "403";
         }
