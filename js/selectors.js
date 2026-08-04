@@ -19,7 +19,24 @@ var TK_SELECTORS = {
     // Scroll containers
     MAIN: 'main',
     MAIN_CONTENT_ALT: '[id="main-content-others_homepage"]',
+
+    // TikTok Shop & Product anchors
+    SHOP_ANCHOR: '[data-e2e*="shop"], [data-e2e="anchor-shop"], [data-e2e*="shopping"], a[href*="shop.tiktok.com"], [class*="ShopAnchor"], [class*="product-anchor"], [class*="e-commerce-anchor"], [data-e2e="video-shopping-anchor"], [class*="ProductAnchor"]',
+
+    // Audio / Sound muted indicators
+    MUTED_NOTICE: '[class*="sound-mute"], [class*="mute-icon"], [data-e2e*="mute"], [class*="SoundMute"]',
 };
+
+// Text keywords for sound muted / removed
+var MUTED_SOUND_KEYWORDS = [
+    "sound removed",
+    "sound unavailable",
+    "audio removed",
+    "âm thanh bị xóa",
+    "âm thanh không khả dụng",
+    "original sound - muted",
+    "muted due to copyright"
+];
 
 // Text labels for the Liked tab (multi-language)
 var LIKED_TAB_LABELS = ["Đã thích", "Liked", "liked"];

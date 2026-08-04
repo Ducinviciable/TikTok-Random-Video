@@ -205,6 +205,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             handleRandomLiked(request.limit, request.username).then(sendResponse).catch(e => sendResponse({ success: false, status: "error", message: e.message }));
             return true;
 
+        case "handle403Detected":
+            console.warn("[BG] 403 / Blank page message received! Auto-triggering randomLiked...");
+            chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
+                const limit = data.targetLimit || 100;
+                const username = data.tiktokUsername || "";
+                handleRandomLiked(limit, username).then(sendResponse).catch(e => sendResponse({ success: false, message: e.message }));
+            });
+            return true;
+
         case "collectMore":
             handleCollectMore(request.limit, request.username).then(sendResponse).catch(e => sendResponse({ success: false, status: "error", message: e.message }));
             return true;
@@ -508,5 +517,25 @@ chrome.commands.onCommand.addListener((command) => {
         }).catch((err) => {
             console.error("[BG] Shortcut error:", err);
         });
+    }
+});
+
+// Auto-recover when TikTok tab encounters 403, Access Denied, Forbidden or blank page
+let last403TriggerTime = 0;
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if ((changeInfo.title || changeInfo.status === "complete") && tab.url && tab.url.includes("tiktok.com")) {
+        const title = (tab.title || "").toLowerCase();
+        if (title.includes("403") || title.includes("access denied") || title.includes("forbidden") || title.includes("just a moment")) {
+            const now = Date.now();
+            if (now - last403TriggerTime > 5000) { // Throttling 5s
+                last403TriggerTime = now;
+                console.warn(`[BG] Detected 403 / Access Denied tab title ("${tab.title}"). Auto-triggering randomLiked in 2 seconds...`);
+                setTimeout(() => {
+                    chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
+                        handleRandomLiked(data.targetLimit || 100, data.tiktokUsername || "");
+                    });
+                }, 2000);
+            }
+        }
     }
 });

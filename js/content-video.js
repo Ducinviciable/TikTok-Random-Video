@@ -234,6 +234,27 @@
     } catch (e) { }
 })();
 
+// Toast notification floating UI on TikTok page
+function showToast(message, type) {
+    type = type || "info";
+    let toast = document.getElementById("tk-random-toast");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "tk-random-toast";
+        toast.style.cssText = "position:fixed;top:20px;right:20px;z-index:999999;background:rgba(20,20,32,0.92);color:#fff;padding:12px 18px;border-radius:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.18);backdrop-filter:blur(10px);transition:all 0.3s cubic-bezier(0.16,1,0.3,1);pointer-events:none;display:flex;align-items:center;gap:8px;";
+        document.body.appendChild(toast);
+    }
+    toast.innerHTML = message;
+    toast.style.opacity = "1";
+    toast.style.transform = "translateY(0)";
+
+    if (toast._timer) clearTimeout(toast._timer);
+    toast._timer = setTimeout(function () {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(-10px)";
+    }, 4000);
+}
+
 // LAYER 6: Force Video Playback + "Please Wait" / 403 Recovery
 
 (function initPlaybackRecovery() {
@@ -255,10 +276,8 @@
         }
     }, 2000);
 
-    // Detect "Please Wait" or error overlays and auto-recover
+    // Detect "Please Wait", 403 or error overlays and auto-recover by triggering randomLiked
     setInterval(function () {
-        if (!window.location.href.includes("/video/")) return;
-
         // Common TikTok error overlay patterns
         var errorDetected = false;
         var errorType = "";
@@ -292,22 +311,26 @@
             }
         }
 
-        // Check page title or body for 403 / error states
+        // Check page title or body for 403 / error / access denied / blank page states
         var title = document.title.toLowerCase();
-        var body = document.body ? document.body.innerText.substring(0, 500).toLowerCase() : "";
-        if (title.includes("403") || title.includes("access denied") ||
-            body.includes("403 forbidden") || body.includes("access denied")) {
+        var bodyText = document.body ? document.body.innerText.substring(0, 500).toLowerCase() : "";
+        var isBlankPage = document.body && document.body.children.length <= 2 && bodyText.trim().length === 0;
+
+        if (title.includes("403") || title.includes("access denied") || title.includes("forbidden") ||
+            bodyText.includes("403 forbidden") || bodyText.includes("access denied") || isBlankPage) {
             errorDetected = true;
             errorType = "403";
         }
 
         // Check for empty video container (video failed to load)
-        var videos = document.querySelectorAll("video");
-        if (videos.length > 0) {
-            var mainVideo = videos[0];
-            if (mainVideo.error || mainVideo.networkState === 3) {
-                errorDetected = true;
-                errorType = "video_error";
+        if (window.location.href.includes("/video/")) {
+            var videos = document.querySelectorAll("video");
+            if (videos.length > 0) {
+                var mainVideo = videos[0];
+                if (mainVideo.error || mainVideo.networkState === 3) {
+                    errorDetected = true;
+                    errorType = "video_error";
+                }
             }
         }
 
@@ -325,32 +348,30 @@
                     dismissBtns[j].click();
                 }
 
-                // If no buttons found, wait then reload
                 if (dismissBtns.length === 0) {
                     setTimeout(function () {
                         window.location.reload();
                     }, 3000 + Math.random() * 4000);
                 }
             } else if (errorType === "403" || errorType === "video_error") {
-                // Wait a random 5-15 seconds then retry the same page
-                var delay = 5000 + Math.random() * 10000;
-                console.warn("[CS] Layer 6: Reloading page in", Math.round(delay / 1000), "seconds to recover from access denied/video error.");
-                setTimeout(function () {
-                    window.location.reload();
-                }, delay);
+                console.warn("[CS] Layer 6: Detected 403 / Access Denied / Blank Page! Triggering Random Liked Video...");
+                showToast("🤖 Phát hiện lỗi 403 / Trang trắng → Đang mở video ngẫu nhiên mới...", "warning");
+                try {
+                    chrome.runtime.sendMessage({ action: "handle403Detected" });
+                } catch (e) { }
             }
         }
 
         // Reset recovery counter when video is playing normally
-        if (videos.length > 0 && !videos[0].paused && !videos[0].error) {
+        var playingVideos = document.querySelectorAll("video");
+        if (playingVideos.length > 0 && !playingVideos[0].paused && !playingVideos[0].error) {
             recoveryAttempts = 0;
         }
-    }, 5000);
+    }, 4000);
 
     // Periodically clear TikTok's internal error/rate-limit cookies
     setInterval(function () {
         try {
-            // Delete rate-limit and tracking cookies
             var cookies = document.cookie.split(";");
             for (var i = 0; i < cookies.length; i++) {
                 var name = cookies[i].split("=")[0].trim();
@@ -361,8 +382,101 @@
             }
             console.log("[CS] Layer 6: Cleaned rate-limiting / telemetry cookies.");
         } catch (e) { }
-    }, 60000); // Every 60 seconds
+    }, 60000);
 })();
+
+// MONITOR 1: Stuck / Frozen Video Monitor (8-second freeze check)
+let lastVideoTime = -1;
+let stuckSeconds = 0;
+let stuckInterval = null;
+
+function startStuckMonitor() {
+    if (stuckInterval) clearInterval(stuckInterval);
+    lastVideoTime = -1;
+    stuckSeconds = 0;
+
+    stuckInterval = setInterval(function () {
+        if (!videoWatcherActive || playNextRequested || !currentVideoElement) return;
+
+        const video = currentVideoElement;
+        if (video.duration && video.duration > 1 && !video.ended) {
+            const currentTime = video.currentTime;
+            if (lastVideoTime >= 0 && Math.abs(currentTime - lastVideoTime) < 0.05 && !video.paused) {
+                stuckSeconds++;
+                console.warn("[CS] ⚠️ Video bị đứng (" + stuckSeconds + "s) - currentTime: " + currentTime.toFixed(2));
+                if (stuckSeconds >= 8) {
+                    console.warn("[CS] ⚠️ Video bị đứng quá 8s! Tự động chuyển video tiếp...");
+                    showToast("⚠️ Video bị đứng quá 8s → Tự chuyển video", "warning");
+                    clearInterval(stuckInterval);
+                    requestNextVideo();
+                    return;
+                }
+            } else {
+                stuckSeconds = 0;
+            }
+            lastVideoTime = currentTime;
+        }
+    }, 1000);
+}
+
+// MONITOR 2 & 3: Audio Check & TikTok Shop Check
+function checkVideoAudioAndShop() {
+    if (!currentVideoElement || playNextRequested) return;
+
+    // 1. TikTok Shop Check
+    let isShop = false;
+    if (typeof TK_SELECTORS !== "undefined" && TK_SELECTORS.SHOP_ANCHOR) {
+        const shopEl = document.querySelector(TK_SELECTORS.SHOP_ANCHOR);
+        if (shopEl) isShop = true;
+    }
+    if (!isShop) {
+        const anchors = document.querySelectorAll('a[href*="shop"], [class*="shop"], [class*="product"], [class*="cart"], [class*="anchor"]');
+        for (let i = 0; i < anchors.length; i++) {
+            const text = anchors[i].textContent.toLowerCase();
+            if (text.includes("cửa hàng") || text.includes("shop") || text.includes("mua ngay") || text.includes("giỏ hàng")) {
+                isShop = true;
+                break;
+            }
+        }
+    }
+
+    if (isShop) {
+        console.log("[CS] 🛒 Phát hiện video TikTok Shop → Tự động bỏ qua");
+        showToast("🛒 Bỏ qua video TikTok Shop", "info");
+        setTimeout(requestNextVideo, 800);
+        return;
+    }
+
+    // 2. No Audio / Muted Sound Check
+    const video = currentVideoElement;
+    let isMuted = false;
+
+    if (video.muted || video.volume === 0) {
+        isMuted = true;
+    }
+
+    if (!isMuted && typeof TK_SELECTORS !== "undefined" && TK_SELECTORS.MUTED_NOTICE) {
+        const muteEl = document.querySelector(TK_SELECTORS.MUTED_NOTICE);
+        if (muteEl) isMuted = true;
+    }
+
+    if (!isMuted && typeof MUTED_SOUND_KEYWORDS !== "undefined") {
+        const pageText = document.body ? document.body.innerText.toLowerCase() : "";
+        for (let j = 0; j < MUTED_SOUND_KEYWORDS.length; j++) {
+            if (pageText.includes(MUTED_SOUND_KEYWORDS[j])) {
+                isMuted = true;
+                break;
+            }
+        }
+    }
+
+    if (isMuted) {
+        console.log("[CS] 🔇 Phát hiện video không có âm thanh / bị tắt tiếng → Tự động bỏ qua");
+        showToast("🔇 Bỏ qua video không có âm thanh", "info");
+        setTimeout(requestNextVideo, 1000);
+        return;
+    }
+}
 
 // VIDEO WATCHER — Auto-next playback engine
 // Find the largest visible video element on the page
@@ -404,9 +518,11 @@ function watchForVideoElement() {
     timeUpdateTriggered = false;
     console.log("[CS] Chuyển sang video mới");
 
+    // Start 8-second stuck monitor and check audio/shop after video loads
+    startStuckMonitor();
+    setTimeout(checkVideoAudioAndShop, 2500);
+
     // CRITICAL: Keep loop ON to prevent TikTok's auto-advance to next feed video
-    // TikTok's internal code listens for the "ended" event and auto-scrolls.
-    // By keeping loop, "ended" never fires → TikTok never auto-advances.
     if (!currentVideoElement.hasAttribute("loop")) {
         currentVideoElement.setAttribute("loop", "");
     }
