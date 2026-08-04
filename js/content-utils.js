@@ -53,7 +53,7 @@ function collectVideoUrls() {
         const links = likedContainer.querySelectorAll(TK_SELECTORS.VIDEO_LINK);
         links.forEach(function (a) {
             const url = a.href.split("?")[0];
-            if (url) {
+            if (url && (!blacklistedSet || !blacklistedSet.has(url))) {
                 let img = a.querySelector("img");
                 if (!img) {
                     const parent = a.closest(TK_SELECTORS.LIKED_ITEM) || a.parentElement;
@@ -76,7 +76,7 @@ function collectVideoUrls() {
                 const a = item.querySelector(TK_SELECTORS.VIDEO_LINK);
                 if (a) {
                     const url = a.href.split("?")[0];
-                    if (url) {
+                    if (url && (!blacklistedSet || !blacklistedSet.has(url))) {
                         const img = item.querySelector("img");
                         const thumb = extractImgUrl(img);
                         if (!collectedMap.has(url)) {

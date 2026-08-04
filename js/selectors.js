@@ -44,6 +44,7 @@ var LIKED_TAB_LABELS = ["Đã thích", "Liked", "liked"];
 // Shared state variables (accessible by all modules)
 var isCollecting = false;
 var collectedMap = new Map();
+var blacklistedSet = new Set();
 var videoWatcherActive = false;
 var currentVideoElement = null;
 var timeUpdateTriggered = false;

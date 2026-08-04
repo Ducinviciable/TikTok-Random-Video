@@ -206,14 +206,18 @@ function startCollection(autoPlay, appendMode, targetLimit, continueFromCurrent)
     }
 
     const proceed = function () {
-        collectVideoUrls();
-        startObserving(appendMode);
-
-        autoScroll(targetLimit, 1000, existingUrls).then(function () {
+        chrome.storage.local.get(["blacklistedVideos"], function (bData) {
+            if (bData && bData.blacklistedVideos) {
+                blacklistedSet = new Set(bData.blacklistedVideos);
+            }
             collectVideoUrls();
-            sendVideosToBackground(appendMode);
+            startObserving(appendMode);
 
-            const newCollectedCount = collectedMap.size - existingUrls.size;
+            autoScroll(targetLimit, 1000, existingUrls).then(function () {
+                collectVideoUrls();
+                sendVideosToBackground(appendMode);
+
+                const newCollectedCount = collectedMap.size - existingUrls.size;
 
             try {
                 chrome.runtime.sendMessage({

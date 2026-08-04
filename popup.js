@@ -3,8 +3,12 @@ const countEl = document.getElementById("videoCount");
 const cacheTimeEl = document.getElementById("cacheTime");
 const randomBtn = document.getElementById("randomBtn");
 const skipBtn = document.getElementById("skipBtn");
+const banBtn = document.getElementById("banBtn");
 const refreshBtn = document.getElementById("refreshBtn");
 const collectMoreBtn = document.getElementById("collectMoreBtn");
+const exportBtn = document.getElementById("exportBtn");
+const importBtn = document.getElementById("importBtn");
+const importInput = document.getElementById("importInput");
 const autoNextToggle = document.getElementById("autoNextToggle");
 const listWrapper = document.getElementById("videoListWrapper");
 const limitInput = document.getElementById("limitInput");
@@ -176,7 +180,7 @@ randomBtn.addEventListener("click", async () => {
     }
 });
 
-// Skip and Delete button click handler
+// Skip button click handler (normal skip)
 skipBtn.addEventListener("click", async () => {
     setLoading(true);
     statusEl.textContent = "⏳ Đang bỏ qua...";
@@ -188,7 +192,7 @@ skipBtn.addEventListener("click", async () => {
         statusEl.textContent = "❌ Extension lỗi, thử reload extension.";
         statusEl.className = "status error";
     } else if (response.success) {
-        statusEl.textContent = `✅ Đã xoá & mở video tiếp!`;
+        statusEl.textContent = `✅ Đã bỏ qua & mở video tiếp!`;
         statusEl.className = "status success";
         refreshCount();
     } else {
@@ -203,6 +207,105 @@ skipBtn.addEventListener("click", async () => {
     }
 
     setLoading(false);
+});
+
+// Ban button click handler (permanent ban)
+banBtn.addEventListener("click", async () => {
+    setLoading(true);
+    statusEl.textContent = "⏳ Đang xoá vĩnh viễn & cấm video...";
+    statusEl.className = "status loading";
+
+    const response = await sendMsg({ action: "banAndPlayNext" });
+
+    if (!response) {
+        statusEl.textContent = "❌ Extension lỗi, thử reload extension.";
+        statusEl.className = "status error";
+    } else if (response.success) {
+        statusEl.textContent = `🚫 Đã cấm vĩnh viễn video & mở video tiếp!`;
+        statusEl.className = "status success";
+        refreshCount();
+    } else {
+        if (response.status === "not_tiktok") {
+            statusEl.textContent = "❌ Bạn phải ở trang TikTok.";
+        } else if (response.status === "no_videos") {
+            statusEl.textContent = "⚠️ Danh sách trống sau khi cấm.";
+        } else {
+            statusEl.textContent = "⚠️ " + (response.message || "Có lỗi xảy ra.");
+        }
+        statusEl.className = "status error";
+    }
+
+    setLoading(false);
+});
+
+// Export Backup click handler
+exportBtn.addEventListener("click", async () => {
+    statusEl.textContent = "⏳ Đang xuất dữ liệu sao lưu...";
+    statusEl.className = "status loading";
+
+    const data = await sendMsg({ action: "exportData" });
+    if (data) {
+        const jsonStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        a.href = url;
+        a.download = `tiktok_liked_backup_${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        statusEl.textContent = `📥 Đã xuất backup (${data.likedVideos.length} video, ${data.blacklistedVideos.length} cấm)!`;
+        statusEl.className = "status success";
+    } else {
+        statusEl.textContent = "❌ Xuất backup thất bại.";
+        statusEl.className = "status error";
+    }
+});
+
+// Import Backup click handler
+importBtn.addEventListener("click", () => {
+    importInput.value = "";
+    importInput.click();
+});
+
+importInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const parsed = JSON.parse(event.target.result);
+            statusEl.textContent = "⏳ Đang nhập dữ liệu backup...";
+            statusEl.className = "status loading";
+
+            const res = await sendMsg({ action: "importData", data: parsed });
+            if (res && res.success) {
+                statusEl.textContent = `✅ Đã khôi phục ${res.count} video (${res.blacklistedCount} video cấm)!`;
+                statusEl.className = "status success";
+                if (parsed.tiktokUsername) {
+                    usernameInput.value = parsed.tiktokUsername;
+                }
+                if (parsed.targetLimit) {
+                    limitInput.value = parsed.targetLimit;
+                }
+                refreshCount();
+                if (listWrapper.classList.contains("show")) {
+                    renderVideoList();
+                }
+            } else {
+                statusEl.textContent = "⚠️ " + ((res && res.message) || "Nhập backup thất bại.");
+                statusEl.className = "status error";
+            }
+        } catch (err) {
+            statusEl.textContent = "❌ File JSON không đúng định dạng.";
+            statusEl.className = "status error";
+        }
+    };
+    reader.readAsText(file);
 });
 
 // Recollect from scratch button click handler
@@ -323,10 +426,13 @@ async function renderVideoList() {
 
         info.appendChild(link);
 
+        const btnGroup = document.createElement("div");
+        btnGroup.style.cssText = "display:flex;gap:4px;flex-shrink:0;";
+
         const delBtn = document.createElement("button");
         delBtn.className = "delete-btn";
         delBtn.textContent = "✕";
-        delBtn.title = "Xoá khỏi danh sách";
+        delBtn.title = "Xoá khỏi danh sách tạm";
         delBtn.addEventListener("click", async (e) => {
             e.stopPropagation();
             const res = await sendMsg({ action: "deleteVideo", index: index });
@@ -338,9 +444,28 @@ async function renderVideoList() {
             }
         });
 
+        const banItemBtn = document.createElement("button");
+        banItemBtn.className = "delete-btn";
+        banItemBtn.textContent = "🚫";
+        banItemBtn.title = "Cấm vĩnh viễn video này";
+        banItemBtn.style.color = "#ef233c";
+        banItemBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const res = await sendMsg({ action: "banVideo", index: index });
+            if (res && res.success) {
+                statusEl.textContent = "🚫 Đã cấm vĩnh viễn. Còn " + res.count + " video.";
+                statusEl.className = "status success";
+                refreshCount();
+                renderVideoList();
+            }
+        });
+
+        btnGroup.appendChild(delBtn);
+        btnGroup.appendChild(banItemBtn);
+
         div.appendChild(img);
         div.appendChild(info);
-        div.appendChild(delBtn);
+        div.appendChild(btnGroup);
         listWrapper.appendChild(div);
     });
 }
@@ -374,16 +499,21 @@ async function loadAutoNextState() {
 function setLoading(loading) {
     randomBtn.disabled = loading;
     skipBtn.disabled = loading;
+    banBtn.disabled = loading;
     refreshBtn.disabled = loading;
     collectMoreBtn.disabled = loading;
+    exportBtn.disabled = loading;
+    importBtn.disabled = loading;
     limitInput.disabled = loading;
     usernameInput.disabled = loading;
     if (loading) {
         randomBtn.classList.add("loading");
         skipBtn.classList.add("loading");
+        banBtn.classList.add("loading");
     } else {
         randomBtn.classList.remove("loading");
         skipBtn.classList.remove("loading");
+        banBtn.classList.remove("loading");
     }
 }
 

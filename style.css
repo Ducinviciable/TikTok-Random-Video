@@ -189,14 +189,25 @@ button {
     animation: pulse 1.5s ease-in-out infinite;
 }
 
+.skip-ban-row {
+    display: flex;
+    gap: 8px;
+}
+
+.skip-ban-row button {
+    flex: 1;
+    padding: 10px 8px;
+    font-size: 12px;
+}
+
 #skipBtn {
     background: linear-gradient(135deg, #f59f00, #e08d00);
-    box-shadow: 0 4px 15px rgba(245, 159, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(245, 159, 0, 0.25);
 }
 
 #skipBtn:hover:not(:disabled) {
     background: linear-gradient(135deg, #ffae19, #f59f00);
-    box-shadow: 0 6px 20px rgba(245, 159, 0, 0.45);
+    box-shadow: 0 6px 16px rgba(245, 159, 0, 0.4);
     transform: translateY(-1px);
 }
 
@@ -209,8 +220,45 @@ button {
     cursor: not-allowed;
 }
 
-#skipBtn.loading {
-    animation: pulse 1.5s ease-in-out infinite;
+#banBtn.danger-btn {
+    background: linear-gradient(135deg, #d90429, #ef233c);
+    box-shadow: 0 4px 12px rgba(217, 4, 41, 0.3);
+}
+
+#banBtn.danger-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ef233c, #ff4d6d);
+    box-shadow: 0 6px 16px rgba(217, 4, 41, 0.45);
+    transform: translateY(-1px);
+}
+
+#banBtn.danger-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+#banBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.backup-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.backup-group button {
+    flex: 1;
+    font-size: 11px;
+    padding: 8px 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #b0c4de;
+}
+
+.backup-group button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.25);
 }
 
 #refreshBtn {

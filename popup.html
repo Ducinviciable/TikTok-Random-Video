@@ -20,10 +20,19 @@
     </div>
 
     <div class="btn-group">
-        <button id="randomBtn">Random Video Đã Like 🎲 </button>
-        <button id="skipBtn">Bỏ qua &amp; Xoá video này ⏭️ </button>
-        <button id="refreshBtn">Thu thập lại từ đầu 🔄 </button>
+        <button id="randomBtn">Random Video Đã Like 🎲</button>
+        <div class="skip-ban-row">
+            <button id="skipBtn" title="Bỏ qua video đang xem (vẫn lưu lại lần quét sau)">Bỏ qua ⏭️</button>
+            <button id="banBtn" class="danger-btn" title="Xoá khỏi danh sách & cấm vĩnh viễn không thu thập nữa">Xoá vĩnh viễn 🚫</button>
+        </div>
+        <button id="refreshBtn">Thu thập lại từ đầu 🔄</button>
         <button id="collectMoreBtn">Thu thập thêm video ➕</button>
+    </div>
+
+    <div class="backup-group">
+        <button id="exportBtn" class="secondary-btn" title="Xuất file .json sao lưu danh sách video & danh sách cấm">Xuất Backup 📤</button>
+        <button id="importBtn" class="secondary-btn" title="Nhập file .json sao lưu để nạp lại danh sách mà không cần quét">Nhập Backup 📥</button>
+        <input type="file" id="importInput" accept=".json" style="display: none;">
     </div>
 
     <div class="setting-group">

@@ -159,15 +159,18 @@ async function findTikTokTab() {
 
 // Helper: Select a random video excluding the current one without repeats
 async function selectRandomVideo(excludeUrl = "") {
-    const data = await chrome.storage.local.get(["likedVideos", "playedVideos"]);
+    const data = await chrome.storage.local.get(["likedVideos", "playedVideos", "blacklistedVideos"]);
     const videos = data.likedVideos || [];
     let played = data.playedVideos || [];
+    const blacklist = new Set(data.blacklistedVideos || []);
 
-    if (videos.length === 0) return null;
+    const validVideos = videos.filter(v => !blacklist.has(getUrl(v).split("?")[0]));
+
+    if (validVideos.length === 0) return null;
 
     const targetExclude = excludeUrl.split("?")[0];
-    let pool = videos.filter(v => getUrl(v).split("?")[0] !== targetExclude);
-    if (pool.length === 0) pool = videos;
+    let pool = validVideos.filter(v => getUrl(v).split("?")[0] !== targetExclude);
+    if (pool.length === 0) pool = validVideos;
 
     const playedSet = new Set(played);
     let unplayedPool = pool.filter(v => !playedSet.has(getUrl(v).split("?")[0]));
@@ -187,7 +190,7 @@ async function selectRandomVideo(excludeUrl = "") {
     return {
         video: selectedVideo,
         unplayedCount: unplayedPool.length - 1,
-        totalCount: videos.length
+        totalCount: validVideos.length
     };
 }
 
@@ -222,6 +225,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             handleSkipAndPlayNext().then(sendResponse).catch(e => sendResponse({ success: false, status: "error", message: e.message }));
             return true;
 
+        case "banAndPlayNext":
+            handleBanAndPlayNext().then(sendResponse).catch(e => sendResponse({ success: false, status: "error", message: e.message }));
+            return true;
+
         case "collectAndPlay":
             handleCollectAndPlay(sender.tab.id).then(sendResponse).catch(e => sendResponse({ success: false, message: e.message }));
             return true;
@@ -254,12 +261,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return true;
 
         case "videosCollected":
-            chrome.storage.local.get(["likedVideos"], (data) => {
+            chrome.storage.local.get(["likedVideos", "blacklistedVideos"], (data) => {
                 let existing = data.likedVideos || [];
                 let incoming = request.videos || [];
+                const blacklist = new Set(data.blacklistedVideos || []);
 
-                existing = existing.map(v => typeof v === 'string' ? { url: v, thumb: '' } : v);
-                incoming = incoming.map(v => typeof v === 'string' ? { url: v, thumb: '' } : v);
+                existing = existing.map(v => typeof v === 'string' ? { url: v, thumb: '' } : v).filter(v => !blacklist.has(getUrl(v).split("?")[0]));
+                incoming = incoming.map(v => typeof v === 'string' ? { url: v, thumb: '' } : v).filter(v => !blacklist.has(getUrl(v).split("?")[0]));
 
                 let merged = [];
                 let newAddedCount = 0;
@@ -301,7 +309,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     likedVideos: merged,
                     collectedAt: Date.now()
                 }, () => {
-                    console.log("[BG] Saved " + merged.length + " videos");
+                    console.log("[BG] Saved " + merged.length + " videos (filtered blacklist)");
                     sendResponse({ success: true, count: merged.length });
                 });
             });
@@ -314,8 +322,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return true;
 
         case "getVideoList":
-            chrome.storage.local.get(["likedVideos"], (data) => {
-                sendResponse({ videos: data.likedVideos || [] });
+            chrome.storage.local.get(["likedVideos", "blacklistedVideos"], (data) => {
+                sendResponse({
+                    videos: data.likedVideos || [],
+                    blacklistedCount: (data.blacklistedVideos || []).length
+                });
             });
             return true;
 
@@ -332,6 +343,73 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ success: false, message: "Index không hợp lệ" });
                 }
             });
+            return true;
+
+        case "banVideo":
+            chrome.storage.local.get(["likedVideos", "blacklistedVideos"], (data) => {
+                const videos = data.likedVideos || [];
+                const blacklist = data.blacklistedVideos || [];
+                const index = request.index;
+
+                if (index >= 0 && index < videos.length) {
+                    const bannedItem = videos.splice(index, 1)[0];
+                    const bannedUrl = getUrl(bannedItem).split("?")[0];
+                    if (bannedUrl && !blacklist.includes(bannedUrl)) {
+                        blacklist.push(bannedUrl);
+                    }
+                    chrome.storage.local.set({ likedVideos: videos, blacklistedVideos: blacklist }, () => {
+                        sendResponse({ success: true, count: videos.length, blacklistedCount: blacklist.length });
+                    });
+                } else {
+                    sendResponse({ success: false, message: "Index không hợp lệ" });
+                }
+            });
+            return true;
+
+        case "exportData":
+            chrome.storage.local.get(["likedVideos", "blacklistedVideos", "collectedAt", "tiktokUsername", "targetLimit"], (data) => {
+                sendResponse({
+                    version: "3.1",
+                    exportAt: Date.now(),
+                    collectedAt: data.collectedAt || null,
+                    tiktokUsername: data.tiktokUsername || "",
+                    targetLimit: data.targetLimit || 100,
+                    likedVideos: data.likedVideos || [],
+                    blacklistedVideos: data.blacklistedVideos || []
+                });
+            });
+            return true;
+
+        case "importData":
+            try {
+                const payload = request.data || {};
+                if (!Array.isArray(payload.likedVideos)) {
+                    sendResponse({ success: false, message: "File backup không hợp lệ (thiếu likedVideos)" });
+                    return true;
+                }
+                const newLiked = payload.likedVideos;
+                const newBlacklist = Array.isArray(payload.blacklistedVideos) ? payload.blacklistedVideos : [];
+                const collectedAt = payload.collectedAt || Date.now();
+                const username = payload.tiktokUsername || "";
+                const limit = payload.targetLimit || 100;
+
+                chrome.storage.local.set({
+                    likedVideos: newLiked,
+                    blacklistedVideos: newBlacklist,
+                    collectedAt: collectedAt,
+                    tiktokUsername: username,
+                    targetLimit: limit
+                }, () => {
+                    progressState = { isCollecting: false, scrollCount: 0, maxScrolls: 0, count: newLiked.length, status: "complete" };
+                    sendResponse({
+                        success: true,
+                        count: newLiked.length,
+                        blacklistedCount: newBlacklist.length
+                    });
+                });
+            } catch (e) {
+                sendResponse({ success: false, message: e.message });
+            }
             return true;
 
         case "clearCache":
@@ -387,6 +465,48 @@ async function handleSkipAndPlayNext() {
         }
     }
     return { success: false, status: "no_videos", message: "Danh sách video đã trống." };
+}
+
+// Ban currently playing video (add to blacklist), delete it from storage, and play next
+async function handleBanAndPlayNext() {
+    const tab = await findTikTokTab();
+    if (!tab) {
+        const result = await selectRandomVideo();
+        if (result) {
+            const nextUrl = getUrl(result.video);
+            await chrome.tabs.create({ url: nextUrl, active: true });
+            return { success: true, count: result.totalCount, unplayedCount: result.unplayedCount, status: "playing" };
+        }
+        return { success: false, status: "no_videos", message: "Không tìm thấy tab TikTok và danh sách video trống." };
+    }
+
+    const currentUrl = tab.url.split("?")[0];
+    const data = await chrome.storage.local.get(["likedVideos", "blacklistedVideos"]);
+    const videos = data.likedVideos || [];
+    const blacklist = data.blacklistedVideos || [];
+
+    const filtered = videos.filter(v => getUrl(v).split("?")[0] !== currentUrl);
+    if (currentUrl && !blacklist.includes(currentUrl)) {
+        blacklist.push(currentUrl);
+    }
+
+    await chrome.storage.local.set({
+        likedVideos: filtered,
+        blacklistedVideos: blacklist
+    });
+
+    console.log(`[BG] Banned video: ${currentUrl}. Total banned: ${blacklist.length}`);
+
+    if (filtered.length > 0) {
+        const result = await selectRandomVideo(currentUrl);
+        if (result) {
+            await randomDelay(800, 2000);
+            const nextUrl = getUrl(result.video);
+            await chrome.tabs.update(tab.id, { url: nextUrl });
+            return { success: true, count: result.totalCount, unplayedCount: result.unplayedCount, status: "playing" };
+        }
+    }
+    return { success: false, status: "no_videos", message: "Danh sách video đã trống sau khi cấm." };
 }
 
 // Randomly choose and play a video from the liked list
