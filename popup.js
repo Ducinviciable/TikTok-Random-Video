@@ -15,7 +15,7 @@ const limitInput = document.getElementById("limitInput");
 const usernameInput = document.getElementById("usernameInput");
 
 let progressInterval = null;
-const MAX_AGE = 3 * 24 * 60 * 60 * 1000; // 3 days cache lifetime
+const MAX_AGE = 3 * 24 * 60 * 60 * 1000;
 
 // Send message to background script securely
 function sendMsg(data) {
