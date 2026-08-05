@@ -1,5 +1,34 @@
 // content-video.js — Enhanced video playback + multi-layer anti-detection bypass
 
+function logPlaybackDiagnostics(tag, video) {
+    var bufferedRanges = [];
+    if (video && video.buffered) {
+        for (var i = 0; i < video.buffered.length; i++) {
+            bufferedRanges.push([
+                video.buffered.start(i).toFixed(2),
+                video.buffered.end(i).toFixed(2)
+            ]);
+        }
+    }
+
+    console.log(
+        "[DIAGNOSTICS] [" + tag + "] " +
+        "t=" + performance.now().toFixed(2) + "ms | " +
+        "url=" + window.location.href + " | " +
+        "doc.hidden=" + document.hidden + " | " +
+        "doc.visState=" + document.visibilityState + " | " +
+        "doc.hasFocus=" + (typeof document.hasFocus === "function" ? document.hasFocus() : "N/A") + " | " +
+        "v.readyState=" + (video ? video.readyState : "N/A") + " | " +
+        "v.netState=" + (video ? video.networkState : "N/A") + " | " +
+        "v.paused=" + (video ? video.paused : "N/A") + " | " +
+        "v.currentTime=" + (video ? (typeof video.currentTime === "number" ? video.currentTime.toFixed(2) : video.currentTime) : "N/A") + " | " +
+        "v.duration=" + (video ? (isNaN(video.duration) ? "NaN" : (typeof video.duration === "number" ? video.duration.toFixed(2) : video.duration)) : "N/A") + " | " +
+        "v.buffered=" + JSON.stringify(bufferedRanges) + " | " +
+        "v.seeking=" + (video ? video.seeking : "N/A") + " | " +
+        "v.ended=" + (video ? video.ended : "N/A")
+    );
+}
+
 // LAYER 1: Page Visibility API Override
 (function initVisibilityBypass() {
     console.log("[CS] Layer 1 Visibility Bypass initialized.");
@@ -271,7 +300,15 @@ function showToast(message, type) {
             var v = videos[i];
             if (v.paused && v.src && v.duration && v.duration > 0 && !v.ended) {
                 console.log("[CS] ⚠️ Phát hiện video bị pause hoặc load chậm");
-                v.play().catch(function () { });
+                logPlaybackDiagnostics("BEFORE_PLAY", v);
+                var p = v.play();
+                if (p && p.then) {
+                    p.then(function () {
+                        logPlaybackDiagnostics("PLAY_RESOLVED", v);
+                    }).catch(function (err) {
+                        logPlaybackDiagnostics("PLAY_REJECTED", v);
+                    });
+                }
             }
         }
     }, 2000);
@@ -369,20 +406,7 @@ function showToast(message, type) {
         }
     }, 4000);
 
-    // Periodically clear TikTok's internal error/rate-limit cookies
-    setInterval(function () {
-        try {
-            var cookies = document.cookie.split(";");
-            for (var i = 0; i < cookies.length; i++) {
-                var name = cookies[i].split("=")[0].trim();
-                if (name.includes("rate") || name.includes("limit") ||
-                    name.includes("_abck") || name.includes("bm_")) {
-                    document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.tiktok.com";
-                }
-            }
-            console.log("[CS] Layer 6: Cleaned rate-limiting / telemetry cookies.");
-        } catch (e) { }
-    }, 60000);
+    // NOTE: Cookie clearing removed — deleting _abck/bm_ Akamai tokens causes 403 errors
 })();
 
 // MONITOR 1: Stuck / Frozen Video Monitor (8-second freeze check)
@@ -403,6 +427,9 @@ function startStuckMonitor() {
             const currentTime = video.currentTime;
             if (lastVideoTime >= 0 && Math.abs(currentTime - lastVideoTime) < 0.05 && !video.paused) {
                 stuckSeconds++;
+                if (stuckSeconds === 5) {
+                    logPlaybackDiagnostics("STUCK", video);
+                }
                 console.warn("[CS] ⚠️ Video bị đứng (" + stuckSeconds + "s) - currentTime: " + currentTime.toFixed(2));
                 if (stuckSeconds >= 8) {
                     console.warn("[CS] ⚠️ Video bị đứng quá 8s! Tự động chuyển video tiếp...");
@@ -518,6 +545,44 @@ function watchForVideoElement() {
     timeUpdateTriggered = false;
     console.log("[CS] Chuyển sang video mới");
 
+    // Force aggressive buffering even in background tabs
+    currentVideoElement.setAttribute("preload", "auto");
+    currentVideoElement.setAttribute("playsinline", "");
+
+    logPlaybackDiagnostics("VIDEO_FOUND", currentVideoElement);
+
+    var diagEvents = [
+        "loadstart", "loadedmetadata", "canplay", "playing", "waiting", "stalled", "error"
+    ];
+    diagEvents.forEach(function (evtName) {
+        currentVideoElement.addEventListener(evtName, function () {
+            logPlaybackDiagnostics("EVENT_" + evtName.toUpperCase(), currentVideoElement);
+        });
+    });
+
+    // Recovery: Auto-resume when Chromium throttles media in background tab
+    currentVideoElement.addEventListener("waiting", function () {
+        if (!playNextRequested && currentVideoElement && !currentVideoElement.ended) {
+            console.log("[CS] ⚡ waiting event → forcing play() to resume");
+            var p = currentVideoElement.play();
+            if (p && p.then) { p.catch(function () {}); }
+        }
+    });
+
+    // Recovery: Re-buffer when network stream stalls in background
+    currentVideoElement.addEventListener("stalled", function () {
+        if (!playNextRequested && currentVideoElement && !currentVideoElement.ended) {
+            console.log("[CS] ⚡ stalled event → calling load() + play() to re-buffer");
+            currentVideoElement.load();
+            setTimeout(function () {
+                if (currentVideoElement && !currentVideoElement.ended && !playNextRequested) {
+                    var p = currentVideoElement.play();
+                    if (p && p.then) { p.catch(function () {}); }
+                }
+            }, 500);
+        }
+    });
+
     // Start 8-second stuck monitor and check audio/shop after video loads
     startStuckMonitor();
     setTimeout(checkVideoAudioAndShop, 2500);
@@ -588,7 +653,15 @@ function requestNextVideo() {
                 // Try to resume video if navigation failed
                 if (currentVideoElement) {
                     currentVideoElement.setAttribute("loop", "");
-                    currentVideoElement.play().catch(function () { });
+                    logPlaybackDiagnostics("BEFORE_PLAY", currentVideoElement);
+                    var p1 = currentVideoElement.play();
+                    if (p1 && p1.then) {
+                        p1.then(function () {
+                            logPlaybackDiagnostics("PLAY_RESOLVED", currentVideoElement);
+                        }).catch(function (err) {
+                            logPlaybackDiagnostics("PLAY_REJECTED", currentVideoElement);
+                        });
+                    }
                 }
             }
         });
@@ -596,7 +669,15 @@ function requestNextVideo() {
         playNextRequested = false;
         if (currentVideoElement) {
             currentVideoElement.setAttribute("loop", "");
-            currentVideoElement.play().catch(function () { });
+            logPlaybackDiagnostics("BEFORE_PLAY", currentVideoElement);
+            var p2 = currentVideoElement.play();
+            if (p2 && p2.then) {
+                p2.then(function () {
+                    logPlaybackDiagnostics("PLAY_RESOLVED", currentVideoElement);
+                }).catch(function (err) {
+                    logPlaybackDiagnostics("PLAY_REJECTED", currentVideoElement);
+                });
+            }
         }
     }
 }

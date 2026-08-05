@@ -44,6 +44,13 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         return true;
     }
 
+    if (request.action === "navigateToVideo") {
+        // SPA navigation: preserves cookies, session, and Akamai tokens (avoids 403)
+        window.location.href = request.url;
+        sendResponse({ success: true });
+        return true;
+    }
+
     if (request.action === "ping") {
         sendResponse({ alive: true });
         return true;

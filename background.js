@@ -119,6 +119,18 @@ function getUrl(item) {
     return typeof item === "string" ? item : (item.url || "");
 }
 
+let tabNavTimestamps = {};
+
+async function logTabUpdated(tabId, targetUrl) {
+    if (tabId) tabNavTimestamps[tabId] = Date.now();
+    try {
+        const tab = await chrome.tabs.get(tabId);
+        console.log(`[DIAGNOSTICS] [TAB_UPDATED] t=${performance.now().toFixed(2)}ms | timestamp=${Date.now()} | tabId=${tabId} | active=${tab ? tab.active : "N/A"} | targetURL=${targetUrl || (tab ? tab.url : "N/A")}`);
+    } catch (e) {
+        console.log(`[DIAGNOSTICS] [TAB_UPDATED] t=${performance.now().toFixed(2)}ms | timestamp=${Date.now()} | tabId=${tabId} | active=N/A | targetURL=${targetUrl || "N/A"}`);
+    }
+}
+
 // Helper: Find or open a TikTok tab, focus it, and direct it to targetUrl
 async function getOrCreateTikTokTab(targetUrl) {
     // Search ALL windows (not just lastFocusedWindow) so popup opening doesn't hide TikTok tabs
@@ -130,6 +142,7 @@ async function getOrCreateTikTokTab(targetUrl) {
     if (activeTikTok) {
         if (targetUrl) {
             await chrome.tabs.update(activeTikTok.id, { url: targetUrl, active: true });
+            await logTabUpdated(activeTikTok.id, targetUrl);
         }
         return activeTikTok;
     }
@@ -137,8 +150,10 @@ async function getOrCreateTikTokTab(targetUrl) {
     if (allTikTokTabs.length > 0) {
         const targetTab = allTikTokTabs[0];
         await chrome.tabs.update(targetTab.id, { active: true });
+        await logTabUpdated(targetTab.id, targetUrl);
         if (targetUrl) {
             await chrome.tabs.update(targetTab.id, { url: targetUrl });
+            await logTabUpdated(targetTab.id, targetUrl);
         }
         return targetTab;
     }
@@ -378,6 +393,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     collectedAt: data.collectedAt || null,
                     tiktokUsername: data.tiktokUsername || "",
                     targetLimit: data.targetLimit || 100,
+                    videoCount: (data.likedVideos || []).length,
+                    blacklistedCount: (data.blacklistedVideos || []).length,
                     likedVideos: data.likedVideos || [],
                     blacklistedVideos: data.blacklistedVideos || []
                 });
@@ -462,9 +479,15 @@ async function handleSkipAndPlayNext() {
         const result = await selectRandomVideo(currentUrl);
         if (result) {
             // Brief delay before skip transition to appear natural
-            await randomDelay(800, 2000);
+            await randomDelay(2000, 4000);
             const nextUrl = getUrl(result.video);
-            await chrome.tabs.update(tab.id, { url: nextUrl });
+            // SPA navigation to preserve session & Akamai tokens
+            try {
+                await chrome.tabs.sendMessage(tab.id, { action: "navigateToVideo", url: nextUrl });
+            } catch (e) {
+                await chrome.tabs.update(tab.id, { url: nextUrl });
+            }
+            await logTabUpdated(tab.id, nextUrl);
             return { success: true, count: result.totalCount, unplayedCount: result.unplayedCount, status: "playing" };
         }
     }
@@ -505,9 +528,15 @@ async function handleBanAndPlayNext() {
     if (videos.length > 0) {
         const result = await selectRandomVideo(currentUrl);
         if (result) {
-            await randomDelay(200, 500);
+            await randomDelay(1000, 3000);
             const nextUrl = getUrl(result.video);
-            await chrome.tabs.update(tab.id, { url: nextUrl });
+            // SPA navigation to preserve session & Akamai tokens
+            try {
+                await chrome.tabs.sendMessage(tab.id, { action: "navigateToVideo", url: nextUrl });
+            } catch (e) {
+                await chrome.tabs.update(tab.id, { url: nextUrl });
+            }
+            await logTabUpdated(tab.id, nextUrl);
             return { success: true, count: result.totalCount, unplayedCount: result.unplayedCount, status: "playing" };
         }
     }
@@ -577,7 +606,13 @@ async function handleCollectAndPlay(tabId) {
         const result = await selectRandomVideo();
         if (result) {
             const randomUrl = getUrl(result.video);
-            await chrome.tabs.update(tabId, { url: randomUrl });
+            // SPA navigation to preserve session & Akamai tokens
+            try {
+                await chrome.tabs.sendMessage(tabId, { action: "navigateToVideo", url: randomUrl });
+            } catch (e) {
+                await chrome.tabs.update(tabId, { url: randomUrl });
+            }
+            await logTabUpdated(tabId, randomUrl);
             return { success: true, count: result.totalCount };
         }
     }
@@ -605,10 +640,16 @@ async function handlePlayNext(tabId) {
 
     const result = await selectRandomVideo(currentUrl);
     if (result) {
-        // Random delay 2-5s before navigating to avoid rate limiting
-        await randomDelay(2000, 5000);
+        // Random delay 4-9s before navigating to avoid rate limiting
+        await randomDelay(4000, 9000);
         const nextUrl = getUrl(result.video);
-        await chrome.tabs.update(tabId, { url: nextUrl });
+        // SPA navigation to preserve session & Akamai tokens
+        try {
+            await chrome.tabs.sendMessage(tabId, { action: "navigateToVideo", url: nextUrl });
+        } catch (e) {
+            await chrome.tabs.update(tabId, { url: nextUrl });
+        }
+        await logTabUpdated(tabId, nextUrl);
         return { success: true };
     }
     return { success: false, reason: "select_failed" };
@@ -676,17 +717,20 @@ chrome.commands.onCommand.addListener((command) => {
 // Auto-recover when TikTok tab encounters 403, Access Denied, Forbidden or blank page
 let last403TriggerTime = 0;
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (tabId && changeInfo.url) {
+        tabNavTimestamps[tabId] = Date.now();
+    }
     if (tab && tab.url && (tab.url.includes("tiktok.com") || tab.url.includes("chrome-error") || tab.url.includes("edge-error"))) {
         if (is403OrErrorTab(tab)) {
             const now = Date.now();
-            if (now - last403TriggerTime > 4000) { // Throttling 4s
+            if (now - last403TriggerTime > 3000) { // Throttling 3s
                 last403TriggerTime = now;
-                console.warn(`[BG] Detected 403/Access Denied/Error tab (title: "${tab.title}", url: "${tab.url}"). Auto-triggering randomLiked in 1.5s...`);
+                console.warn(`[BG] Detected 403/Access Denied/Error tab (title: "${tab.title}", url: "${tab.url}"). Auto-triggering randomLiked...`);
                 setTimeout(() => {
                     chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
                         handleRandomLiked(data.targetLimit || 100, data.tiktokUsername || "");
                     });
-                }, 1500);
+                }, 1000);
             }
         }
     }
@@ -696,15 +740,41 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 setInterval(async () => {
     try {
         const tab = await findTikTokTab();
-        if (tab && is403OrErrorTab(tab)) {
-            const now = Date.now();
-            if (now - last403TriggerTime > 4000) {
+        if (!tab || !tab.url) return;
+
+        const now = Date.now();
+
+        // 1. Explicit title or URL keyword match
+        if (is403OrErrorTab(tab)) {
+            if (now - last403TriggerTime > 3000) {
                 last403TriggerTime = now;
                 console.warn(`[BG Watchdog] Active TikTok tab is in 403/Error state ("${tab.title}"). Auto-switching to next random video...`);
                 chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
                     handleRandomLiked(data.targetLimit || 100, data.tiktokUsername || "");
                 });
             }
+            return;
+        }
+
+        // 2. Ping check for /video/ pages where Edge/Chrome rendered native error page (content script blocked)
+        if (tab.url.includes("/video/")) {
+            const navTime = tabNavTimestamps[tab.id] || 0;
+            const elapsed = now - navTime;
+
+            // Check ping if tab has been on video URL for more than 3 seconds
+            if (elapsed > 3000) {
+                chrome.tabs.sendMessage(tab.id, { action: "ping" }, (response) => {
+                    if (chrome.runtime.lastError || !response || !response.alive) {
+                        if (now - last403TriggerTime > 3000) {
+                            last403TriggerTime = now;
+                            console.warn(`[BG Watchdog] Video tab ping failed after ${elapsed}ms ("${tab.url}"). Tab is stuck on 403/chrome-error. Auto-skipping...`);
+                            chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
+                                handleRandomLiked(data.targetLimit || 100, data.tiktokUsername || "");
+                            });
+                        }
+                    }
+                });
+            }
         }
     } catch (e) { }
-}, 4000);
+}, 3000);
