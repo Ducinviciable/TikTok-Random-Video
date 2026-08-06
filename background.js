@@ -19,7 +19,7 @@ let progressState = {
 // Global job tracking for page loading monitoring
 let activeCollectionJob = null;
 
-function startCollectionJob(tabId, limit, username, appendMode, autoPlay) {
+function startCollectionJob(tabId, limit, username, appendMode, autoPlay, smartStop = false) {
     if (activeCollectionJob) {
         clearTimeout(activeCollectionJob.timeoutId);
         clearInterval(activeCollectionJob.checkIntervalId);
@@ -31,6 +31,7 @@ function startCollectionJob(tabId, limit, username, appendMode, autoPlay) {
         username: username,
         appendMode: appendMode,
         autoPlay: autoPlay,
+        smartStop: smartStop,
         attempts: 0
     };
 
@@ -106,7 +107,8 @@ function runJobCycle() {
                     action: "clickLikedTabAndCollect",
                     append: job.appendMode,
                     autoPlay: job.autoPlay,
-                    limit: job.limit
+                    limit: job.limit,
+                    smartStop: job.smartStop || false
                 }).catch(() => { });
             });
         });
@@ -256,6 +258,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             handlePlayNext(sender.tab.id).then(sendResponse).catch(e => sendResponse({ success: false, message: e.message }));
             return true;
 
+        case "saveCheckpoint":
+            if (request.checkpoint) {
+                chrome.storage.local.set({ checkpoint: request.checkpoint }, () => {
+                    sendResponse({ success: true });
+                });
+            } else {
+                sendResponse({ success: false });
+            }
+            return true;
+
+        case "getCheckpoint":
+            chrome.storage.local.get(["checkpoint"], (data) => {
+                sendResponse({ success: true, checkpoint: data.checkpoint || null });
+            });
+            return true;
+
+        case "clearCheckpoint":
+            chrome.storage.local.remove(["checkpoint"], () => {
+                sendResponse({ success: true });
+            });
+            return true;
+
         case "collectionProgress":
             if (request.isCollecting) {
                 progressState = {
@@ -266,6 +290,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     newCount: request.newCount,
                     limit: request.limit,
                     status: request.status || "collecting",
+                    missingThumbs: request.missingThumbs || 0,
                     newAddedCount: 0
                 };
             } else {
@@ -569,7 +594,7 @@ async function handleRandomLiked(limit = 100, username = "") {
 }
 
 // Collect more videos (append mode). If already on liked tab, scroll in place
-async function handleCollectMore(limit = 100, username = "") {
+async function handleCollectMore(limit = 100, username = "", smartStop = false) {
     const handle = username.startsWith("@") ? username : "@" + username;
     const profileUrl = "https://www.tiktok.com/" + handle;
 
@@ -581,7 +606,8 @@ async function handleCollectMore(limit = 100, username = "") {
                 action: "continueCollecting",
                 append: true,
                 autoPlay: false,
-                limit: limit
+                limit: limit,
+                smartStop: smartStop
             });
         } catch (e) {
             console.log("[BG] Error sending continueCollecting:", e.message);
@@ -592,7 +618,7 @@ async function handleCollectMore(limit = 100, username = "") {
     const targetTab = await getOrCreateTikTokTab(profileUrl);
 
     // Monitor tab loading, error pages (403), and triggers collection automatically
-    startCollectionJob(targetTab.id, limit, username, true, false);
+    startCollectionJob(targetTab.id, limit, username, true, false, smartStop);
 
     return { success: true, status: "navigating" };
 }

@@ -1,6 +1,3 @@
-// Centralized TikTok DOM selectors
-// Shared globally across all content script files
-
 var TK_SELECTORS = {
     // Liked videos tab & container
     LIKED_CONTAINER: '[data-e2e="user-liked-item-list"]',
@@ -50,3 +47,11 @@ var currentVideoElement = null;
 var timeUpdateTriggered = false;
 var playNextRequested = false;
 var loopObserver = null;
+
+// High-capacity collection & checkpoint state variables
+var isDeepAppend = false;
+var missingThumbQueue = new Set();
+var activeDomNodes = [];
+var prunedNodeCount = 0;
+var checkpointData = null;
+

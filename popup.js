@@ -5,7 +5,10 @@ const randomBtn = document.getElementById("randomBtn");
 const skipBtn = document.getElementById("skipBtn");
 const banBtn = document.getElementById("banBtn");
 const refreshBtn = document.getElementById("refreshBtn");
-const collectMoreBtn = document.getElementById("collectMoreBtn");
+const quickUpdateBtn = document.getElementById("quickUpdateBtn");
+const deepAppendBtn = document.getElementById("deepAppendBtn");
+const checkpointBanner = document.getElementById("checkpointBanner");
+const checkpointText = document.getElementById("checkpointText");
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const importInput = document.getElementById("importInput");
@@ -60,14 +63,25 @@ function startProgressPoller() {
 
     progressInterval = setInterval(async () => {
         const progress = await sendMsg({ action: "getProgress" });
+        const cpData = await sendMsg({ action: "getCheckpoint" });
+
+        if (cpData && cpData.checkpoint) {
+            checkpointBanner.style.display = "block";
+            checkpointText.textContent = `💾 Checkpoint: Đã bảo vệ ${cpData.checkpoint.count} video`;
+        } else {
+            checkpointBanner.style.display = "none";
+        }
+
         if (progress && progress.isCollecting) {
             const current = progress.newCount !== undefined ? progress.newCount : 0;
             const limit = progress.limit || 100;
 
-            if (progress.status === "catchup") {
-                statusEl.textContent = `🔄 Đang lọc trùng... Đã phát hiện ${progress.count} video cũ.`;
+            if (progress.status === "slow_network") {
+                statusEl.textContent = `⚠️ Mạng yếu, vui lòng chờ... (Đã lấy ${current}/${limit} video mới)`;
+            } else if (progress.status === "catchup") {
+                statusEl.textContent = `🔄 [Catch-Up] Đang lướt qua video cũ... (Tổng: ${progress.count})`;
             } else {
-                statusEl.textContent = `🔄 Đang thu thập... Đã lấy ${current}/${limit} video mới (Tổng: ${progress.count})`;
+                statusEl.textContent = `⚡ [Collecting] +${current} video mới | Tổng: ${progress.count}`;
             }
             statusEl.className = "status loading";
 
@@ -81,9 +95,9 @@ function startProgressPoller() {
             const newCount = (finalProgress && finalProgress.newAddedCount) || 0;
 
             if (newCount > 0) {
-                statusEl.textContent = `✅ Thu thập video thành công! Tổng số: ${totalCount} (Thêm mới ${newCount} video)`;
+                statusEl.textContent = `✅ Thu thập xong! +${newCount} video mới (Tổng: ${totalCount})`;
             } else {
-                statusEl.textContent = `✅ Thu thập video thành công! Tổng số: ${totalCount} video`;
+                statusEl.textContent = `✅ Thu thập xong! Tổng số: ${totalCount} video`;
             }
             statusEl.className = "status success";
 
@@ -340,8 +354,8 @@ refreshBtn.addEventListener("click", async () => {
     }
 });
 
-// Collect More button click handler
-collectMoreBtn.addEventListener("click", async () => {
+// Quick Update button click handler (Smart Stop = true)
+quickUpdateBtn.addEventListener("click", async () => {
     setLoading(true);
 
     if (!checkUsernameFilled()) {
@@ -349,18 +363,49 @@ collectMoreBtn.addEventListener("click", async () => {
         return;
     }
 
-    statusEl.textContent = "🔄 Đang quét bổ sung video...";
+    statusEl.textContent = "⚡ Đang kiểm tra cập nhật video mới...";
     statusEl.className = "status loading";
 
     const limit = parseInt(limitInput.value) || 100;
     const username = getProfileUsername();
 
-    const response = await sendMsg({ action: "collectMore", limit: limit, username: username });
+    const response = await sendMsg({ action: "collectMore", limit: limit, username: username, smartStop: true });
     if (response && response.success) {
         if (response.status === "collecting_in_place") {
-            statusEl.textContent = "🔄 Đang cuộn tiếp tại chỗ để quét thêm video...";
+            statusEl.textContent = "⚡ Đang kiểm tra video mới...";
         } else {
-            statusEl.textContent = "🔄 Đang chuyển hướng đến trang cá nhân để quét thêm...";
+            statusEl.textContent = "⚡ Đang chuyển hướng đến trang cá nhân để cập nhật...";
+        }
+        statusEl.className = "status loading";
+        startProgressPoller();
+    } else {
+        statusEl.textContent = "⚠️ " + ((response && response.message) || "Không gửi được yêu cầu.");
+        statusEl.className = "status error";
+        setLoading(false);
+    }
+});
+
+// Deep Append button click handler (Smart Stop = false)
+deepAppendBtn.addEventListener("click", async () => {
+    setLoading(true);
+
+    if (!checkUsernameFilled()) {
+        setLoading(false);
+        return;
+    }
+
+    statusEl.textContent = "📜 Đang quét sâu nối tiếp video cũ hơn...";
+    statusEl.className = "status loading";
+
+    const limit = parseInt(limitInput.value) || 100;
+    const username = getProfileUsername();
+
+    const response = await sendMsg({ action: "collectMore", limit: limit, username: username, smartStop: false });
+    if (response && response.success) {
+        if (response.status === "collecting_in_place") {
+            statusEl.textContent = "📜 Đang cuộn nối tiếp để quét video cũ...";
+        } else {
+            statusEl.textContent = "📜 Đang chuyển hướng đến trang cá nhân để quét video cũ...";
         }
         statusEl.className = "status loading";
         startProgressPoller();
@@ -501,7 +546,8 @@ function setLoading(loading) {
     skipBtn.disabled = loading;
     banBtn.disabled = loading;
     refreshBtn.disabled = loading;
-    collectMoreBtn.disabled = loading;
+    quickUpdateBtn.disabled = loading;
+    deepAppendBtn.disabled = loading;
     exportBtn.disabled = loading;
     importBtn.disabled = loading;
     limitInput.disabled = loading;

@@ -189,12 +189,14 @@ button {
     animation: pulse 1.5s ease-in-out infinite;
 }
 
-.skip-ban-row {
+.skip-ban-row,
+.collect-btn-row {
     display: flex;
     gap: 8px;
 }
 
-.skip-ban-row button {
+.skip-ban-row button,
+.collect-btn-row button {
     flex: 1;
     padding: 10px 8px;
     font-size: 12px;
@@ -259,6 +261,37 @@ button {
     background: rgba(255, 255, 255, 0.12);
     color: #fff;
     border-color: rgba(255, 255, 255, 0.25);
+}
+
+#quickUpdateBtn {
+    background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+    color: #fff;
+    font-weight: 600;
+}
+
+#quickUpdateBtn:hover {
+    background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%);
+}
+
+#deepAppendBtn {
+    background: linear-gradient(135deg, #8e2de2 0%, #4a00e0 100%);
+    color: #fff;
+    font-weight: 600;
+}
+
+#deepAppendBtn:hover {
+    background: linear-gradient(135deg, #a044ff 0%, #6a11cb 100%);
+}
+
+.checkpoint-banner {
+    margin: 8px 0;
+    padding: 6px 10px;
+    background: rgba(46, 204, 113, 0.15);
+    border: 1px solid rgba(46, 204, 113, 0.3);
+    border-radius: 6px;
+    text-align: center;
+    font-size: 11px;
+    color: #2ecc71;
 }
 
 #refreshBtn {

@@ -1,5 +1,3 @@
-// content-video.js — Enhanced video playback + multi-layer anti-detection bypass
-
 function logPlaybackDiagnostics(tag, video) {
     var bufferedRanges = [];
     if (video && video.buffered) {
@@ -313,9 +311,7 @@ function showToast(message, type) {
         }
     }, 2000);
 
-    // Detect "Please Wait", 403 or error overlays and auto-recover by triggering randomLiked
     setInterval(function () {
-        // Common TikTok error overlay patterns
         var errorDetected = false;
         var errorType = "";
 
@@ -468,9 +464,9 @@ function checkVideoAudioAndShop() {
     }
 
     if (isShop) {
-        console.log("[CS] 🛒 Phát hiện video TikTok Shop → Tự động bỏ qua");
-        showToast("🛒 Bỏ qua video TikTok Shop", "info");
-        setTimeout(requestNextVideo, 800);
+        console.log("[CS] 🛒 Phát hiện video TikTok Shop → Tự động bỏ qua (chờ 2.2s)");
+        showToast("🛒 Bỏ qua video sau 2s...", "info");
+        setTimeout(requestNextVideo, 2200);
         return;
     }
 
@@ -478,29 +474,34 @@ function checkVideoAudioAndShop() {
     const video = currentVideoElement;
     let isMuted = false;
 
-    if (video.muted || video.volume === 0) {
-        isMuted = true;
+    // If video element is muted, attempt to unmute it first rather than skipping
+    if (video) {
+        if (video.muted) {
+            try { video.muted = false; } catch (e) { }
+        }
+        if (video.volume === 0) {
+            try { video.volume = 1.0; } catch (e) { }
+        }
     }
 
-    if (!isMuted && typeof TK_SELECTORS !== "undefined" && TK_SELECTORS.MUTED_NOTICE) {
-        const muteEl = document.querySelector(TK_SELECTORS.MUTED_NOTICE);
-        if (muteEl) isMuted = true;
-    }
-
-    if (!isMuted && typeof MUTED_SOUND_KEYWORDS !== "undefined") {
-        const pageText = document.body ? document.body.innerText.toLowerCase() : "";
-        for (let j = 0; j < MUTED_SOUND_KEYWORDS.length; j++) {
-            if (pageText.includes(MUTED_SOUND_KEYWORDS[j])) {
-                isMuted = true;
-                break;
+    // Check specific sound/music title containers for copyright muted notices
+    if (typeof MUTED_SOUND_KEYWORDS !== "undefined") {
+        const soundContainer = document.querySelector('[data-e2e="browse-sound"], [class*="DivMusicText"], [class*="SoundTitle"], [class*="MusicText"]');
+        if (soundContainer) {
+            const soundText = soundContainer.textContent.toLowerCase();
+            for (let j = 0; j < MUTED_SOUND_KEYWORDS.length; j++) {
+                if (soundText.includes(MUTED_SOUND_KEYWORDS[j])) {
+                    isMuted = true;
+                    break;
+                }
             }
         }
     }
 
     if (isMuted) {
-        console.log("[CS] 🔇 Phát hiện video không có âm thanh / bị tắt tiếng → Tự động bỏ qua");
-        showToast("🔇 Bỏ qua video không có âm thanh", "info");
-        setTimeout(requestNextVideo, 1000);
+        console.log("[CS] 🔇 Phát hiện âm thanh bị gỡ / vi phạm bản quyền → Tự động bỏ qua (chờ 2.2s)");
+        showToast("🔇 Bỏ qua video âm thanh bị gỡ (chờ 2s)...", "info");
+        setTimeout(requestNextVideo, 2200);
         return;
     }
 }
@@ -565,7 +566,7 @@ function watchForVideoElement() {
         if (!playNextRequested && currentVideoElement && !currentVideoElement.ended) {
             console.log("[CS] ⚡ waiting event → forcing play() to resume");
             var p = currentVideoElement.play();
-            if (p && p.then) { p.catch(function () {}); }
+            if (p && p.then) { p.catch(function () { }); }
         }
     });
 
@@ -577,7 +578,7 @@ function watchForVideoElement() {
             setTimeout(function () {
                 if (currentVideoElement && !currentVideoElement.ended && !playNextRequested) {
                     var p = currentVideoElement.play();
-                    if (p && p.then) { p.catch(function () {}); }
+                    if (p && p.then) { p.catch(function () { }); }
                 }
             }, 500);
         }
@@ -640,7 +641,19 @@ function onVideoTimeUpdate() {
     }
 }
 
+var lastSkipTimestamp = 0;
+
 function requestNextVideo() {
+    var now = Date.now();
+    var timeSinceLastSkip = now - lastSkipTimestamp;
+    if (timeSinceLastSkip < 2000) {
+        var remainingDelay = 2000 - timeSinceLastSkip;
+        console.log("[CS] ⏳ Throttle: Chờ " + remainingDelay + "ms trước khi chuyển video tiếp...");
+        setTimeout(requestNextVideo, remainingDelay);
+        return;
+    }
+    lastSkipTimestamp = Date.now();
+
     if (playNextRequested !== true) {
         playNextRequested = true;
     }

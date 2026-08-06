@@ -1,6 +1,3 @@
-// Helper functions for scraping video data from TikTok DOM
-
-// Parse srcset attribute to extract the first URL
 function parseSrcset(srcset) {
     if (!srcset) return "";
     const parts = srcset.split(",");
@@ -49,44 +46,42 @@ function collectVideoUrls() {
     let found = 0;
     const likedContainer = document.querySelector(TK_SELECTORS.LIKED_CONTAINER);
 
+    function processItem(a, imgOwner) {
+        const url = a.href.split("?")[0];
+        if (!url || (blacklistedSet && blacklistedSet.has(url))) return;
+
+        let img = a.querySelector("img");
+        if (!img && imgOwner) img = imgOwner.querySelector("img");
+
+        const thumb = extractImgUrl(img);
+
+        if (!collectedMap.has(url)) {
+            collectedMap.set(url, thumb);
+            found++;
+        } else if (thumb && !collectedMap.get(url)) {
+            collectedMap.set(url, thumb);
+        }
+
+        // Track missing thumbnails for Retry Queue & Adaptive Delay
+        if (!thumb || thumb === "") {
+            missingThumbQueue.add(url);
+        } else {
+            missingThumbQueue.delete(url);
+        }
+    }
+
     if (likedContainer) {
         const links = likedContainer.querySelectorAll(TK_SELECTORS.VIDEO_LINK);
         links.forEach(function (a) {
-            const url = a.href.split("?")[0];
-            if (url && (!blacklistedSet || !blacklistedSet.has(url))) {
-                let img = a.querySelector("img");
-                if (!img) {
-                    const parent = a.closest(TK_SELECTORS.LIKED_ITEM) || a.parentElement;
-                    if (parent) img = parent.querySelector("img");
-                }
-                const thumb = extractImgUrl(img);
-
-                if (!collectedMap.has(url)) {
-                    collectedMap.set(url, thumb);
-                    found++;
-                } else if (thumb && !collectedMap.get(url)) {
-                    collectedMap.set(url, thumb);
-                }
-            }
+            const parent = a.closest(TK_SELECTORS.LIKED_ITEM) || a.parentElement;
+            processItem(a, parent);
         });
     } else {
         const items = document.querySelectorAll(TK_SELECTORS.LIKED_ITEM);
         if (items.length > 0) {
             items.forEach(function (item) {
                 const a = item.querySelector(TK_SELECTORS.VIDEO_LINK);
-                if (a) {
-                    const url = a.href.split("?")[0];
-                    if (url && (!blacklistedSet || !blacklistedSet.has(url))) {
-                        const img = item.querySelector("img");
-                        const thumb = extractImgUrl(img);
-                        if (!collectedMap.has(url)) {
-                            collectedMap.set(url, thumb);
-                            found++;
-                        } else if (thumb && !collectedMap.get(url)) {
-                            collectedMap.set(url, thumb);
-                        }
-                    }
-                }
+                if (a) processItem(a, item);
             });
         }
     }

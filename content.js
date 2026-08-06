@@ -1,13 +1,13 @@
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     if (request.action === "startCollecting") {
-        startCollection(request.autoPlay || false, request.append || false, request.limit || 100, false);
+        startCollection(request.autoPlay || false, request.append || false, request.limit || 100, false, request.smartStop || false);
         sendResponse({ success: true, status: "collecting" });
         return true;
     }
 
     if (request.action === "clickLikedTabAndCollect") {
         clickLikedTab(function (found) {
-            startCollection(request.autoPlay || false, request.append || false, request.limit || 100, false);
+            startCollection(request.autoPlay || false, request.append || false, request.limit || 100, false, request.smartStop || false);
         });
         sendResponse({ success: true, status: "clicking_tab" });
         return true;
@@ -15,10 +15,10 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 
     if (request.action === "continueCollecting") {
         if (isOnLikedTab()) {
-            startCollection(request.autoPlay || false, true, request.limit || 100, true);
+            startCollection(request.autoPlay || false, true, request.limit || 100, true, request.smartStop || false);
         } else {
             clickLikedTab(function (found) {
-                startCollection(request.autoPlay || false, true, request.limit || 100, found);
+                startCollection(request.autoPlay || false, true, request.limit || 100, found, request.smartStop || false);
             });
         }
         sendResponse({ success: true, status: "continue_collecting" });
