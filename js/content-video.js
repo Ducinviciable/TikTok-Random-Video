@@ -27,16 +27,46 @@ function logPlaybackDiagnostics(tag, video) {
     );
 }
 
+// NATIVE CODE STEALTHING ENGINE: Overrides Function.prototype.toString to hide JS function overrides
+(function initNativeStealthing() {
+    try {
+        var _origToString = Function.prototype.toString;
+        var stealthMap = new Map();
+
+        window._stealthRegister = function (fn, nativeName) {
+            if (typeof fn === "function") {
+                stealthMap.set(fn, "function " + nativeName + "() { [native code] }");
+            }
+        };
+
+        Function.prototype.toString = function () {
+            if (stealthMap.has(this)) {
+                return stealthMap.get(this);
+            }
+            return _origToString.apply(this, arguments);
+        };
+        window._stealthRegister(Function.prototype.toString, "toString");
+    } catch (e) { }
+})();
+
 // LAYER 1: Page Visibility API Override
 (function initVisibilityBypass() {
     console.log("[CS] Layer 1 Visibility Bypass initialized.");
+    var hiddenGetter = function () { return false; };
+    var visStateGetter = function () { return "visible"; };
+
+    if (window._stealthRegister) {
+        window._stealthRegister(hiddenGetter, "get hidden");
+        window._stealthRegister(visStateGetter, "get visibilityState");
+    }
+
     try {
         Object.defineProperty(document, "hidden", {
-            get: function () { return false; },
+            get: hiddenGetter,
             configurable: true
         });
         Object.defineProperty(document, "visibilityState", {
-            get: function () { return "visible"; },
+            get: visStateGetter,
             configurable: true
         });
     } catch (e) { }
@@ -58,15 +88,22 @@ function logPlaybackDiagnostics(tag, video) {
             }
             return _origAddEvent.call(this, type, listener, options);
         };
+        if (window._stealthRegister) {
+            window._stealthRegister(EventTarget.prototype.addEventListener, "addEventListener");
+        }
     } catch (e) { }
 })();
 
-// LAYER 2: Focus / Blur / hasFocus Override
+// LAYER 2: Focus / Blur / hasFocus Override & Real Visibility Resume
 (function initFocusBypass() {
-    console.log("[CS] Layer 2 Focus/Blur Bypass initialized.");
-    // Override document.hasFocus() — TikTok calls this to verify tab activity
+    console.log("[CS] Layer 2 Focus/Blur Bypass & Resume initialized.");
+    var hasFocusFn = function () { return true; };
+    if (window._stealthRegister) {
+        window._stealthRegister(hasFocusFn, "hasFocus");
+    }
+
     try {
-        Document.prototype.hasFocus = function () { return true; };
+        Document.prototype.hasFocus = hasFocusFn;
     } catch (e) { }
 
     // Block blur events on window and document (capture phase)
@@ -88,6 +125,15 @@ function logPlaybackDiagnostics(tag, video) {
         });
     } catch (e) { }
 
+    // Real Visibility Resume: When tab actually gains focus, force-play current video if paused
+    window.addEventListener("focus", function () {
+        if (currentVideoElement && currentVideoElement.paused && !currentVideoElement.ended && currentVideoElement.duration > 0) {
+            console.log("[CS] 👁️ Tab focus resumed → Force-playing current video");
+            var p = currentVideoElement.play();
+            if (p && p.then) { p.catch(function () { }); }
+        }
+    });
+
     // Periodically dispatch fake focus events to keep TikTok's internal state
     setInterval(function () {
         try {
@@ -100,27 +146,27 @@ function logPlaybackDiagnostics(tag, video) {
 // LAYER 3: Navigator Anti-Detection
 (function initNavigatorSpoof() {
     console.log("[CS] Layer 3 Navigator Spoofing initialized.");
-    // Remove webdriver flag (Selenium/automation indicator)
+    var webdriverGetter = function () { return false; };
+    if (window._stealthRegister) {
+        window._stealthRegister(webdriverGetter, "get webdriver");
+    }
+
     try {
         Object.defineProperty(navigator, "webdriver", {
-            get: function () { return false; },
+            get: webdriverGetter,
             configurable: true
         });
     } catch (e) { }
 
-    // Ensure plugins array is not empty (bots typically have 0 plugins)
     try {
         if (navigator.plugins.length === 0) {
             Object.defineProperty(navigator, "plugins", {
-                get: function () {
-                    return [1, 2, 3, 4, 5]; // Fake non-empty plugins
-                },
+                get: function () { return [1, 2, 3, 4, 5]; },
                 configurable: true
             });
         }
     } catch (e) { }
 
-    // Ensure languages array exists
     try {
         if (!navigator.languages || navigator.languages.length === 0) {
             Object.defineProperty(navigator, "languages", {
@@ -131,32 +177,103 @@ function logPlaybackDiagnostics(tag, video) {
     } catch (e) { }
 })();
 
-// LAYER 4: Fake Human Activity Simulation
+// SILENT WEB AUDIO KEEP-ALIVE: Boosts Chromium process priority to prevent background tab throttling
+(function initSilentAudioKeepAlive() {
+    var audioCtx = null;
+
+    function startAudio() {
+        try {
+            if (!audioCtx) {
+                var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextClass) return;
+                audioCtx = new AudioContextClass();
+
+                var osc = audioCtx.createOscillator();
+                var gain = audioCtx.createGain();
+
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.00001, audioCtx.currentTime); // Completely silent
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+
+                console.log("[CS] 🔊 Silent Web Audio Keep-Alive active (Process priority boosted).");
+            }
+
+            if (audioCtx.state === "suspended") {
+                audioCtx.resume();
+            }
+        } catch (e) { }
+    }
+
+    if (document.readyState === "complete") {
+        startAudio();
+    } else {
+        window.addEventListener("load", startAudio);
+    }
+
+    window.addEventListener("click", startAudio, { once: true });
+    window.addEventListener("keydown", startAudio, { once: true });
+})();
+
+// LAYER 4: Smart Fake Human Activity Simulation (Targeted Player Area)
 
 (function initFakeActivity() {
-    console.log("[CS] Layer 4 Fake Human Activity initialized.");
-    // Random integer between min and max (inclusive)
+    console.log("[CS] Layer 4 Smart Fake Human Activity initialized.");
+
     function randInt(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
-    // Simulate mouse movement at random positions
+    // Get target bounding box (video element or center viewport)
+    function getTargetPoint() {
+        if (currentVideoElement) {
+            var rect = currentVideoElement.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                return {
+                    x: Math.floor(rect.left + randInt(20, rect.width - 20)),
+                    y: Math.floor(rect.top + randInt(20, rect.height - 20))
+                };
+            }
+        }
+        return {
+            x: randInt(150, window.innerWidth - 150),
+            y: randInt(150, window.innerHeight - 150)
+        };
+    }
+
     function fakeMouseMove() {
         try {
-            var x = randInt(100, window.innerWidth - 100);
-            var y = randInt(100, window.innerHeight - 100);
+            var pt = getTargetPoint();
             var evt = new MouseEvent("mousemove", {
                 bubbles: true,
-                clientX: x,
-                clientY: y,
-                screenX: x,
-                screenY: y
+                clientX: pt.x,
+                clientY: pt.y,
+                screenX: pt.x,
+                screenY: pt.y
             });
-            document.dispatchEvent(evt);
+            if (currentVideoElement) currentVideoElement.dispatchEvent(evt);
+            else document.dispatchEvent(evt);
         } catch (e) { }
     }
 
-    // Simulate small scroll events (unnoticeable to user)
+    function fakePointerMove() {
+        try {
+            var pt = getTargetPoint();
+            var evt = new PointerEvent("pointermove", {
+                bubbles: true,
+                clientX: pt.x,
+                clientY: pt.y,
+                pointerId: 1,
+                pointerType: "mouse"
+            });
+            if (currentVideoElement) currentVideoElement.dispatchEvent(evt);
+            else document.dispatchEvent(evt);
+        } catch (e) { }
+    }
+
     function fakeScroll() {
         try {
             document.dispatchEvent(new Event("scroll", { bubbles: true }));
@@ -164,33 +281,18 @@ function logPlaybackDiagnostics(tag, video) {
         } catch (e) { }
     }
 
-    // Simulate pointer events (TikTok uses pointer events heavily)
-    function fakePointerMove() {
-        try {
-            var x = randInt(200, window.innerWidth - 200);
-            var y = randInt(200, window.innerHeight - 200);
-            document.dispatchEvent(new PointerEvent("pointermove", {
-                bubbles: true,
-                clientX: x,
-                clientY: y,
-                pointerId: 1,
-                pointerType: "mouse"
-            }));
-        } catch (e) { }
-    }
-
-    // Run fake activity on randomized intervals (appear natural)
+    // Natural randomized intervals
     setInterval(function () {
         fakeMouseMove();
-    }, randInt(3000, 8000));
-
-    setInterval(function () {
-        fakeScroll();
-    }, randInt(10000, 20000));
+    }, randInt(4000, 9000));
 
     setInterval(function () {
         fakePointerMove();
-    }, randInt(5000, 12000));
+    }, randInt(6000, 14000));
+
+    setInterval(function () {
+        fakeScroll();
+    }, randInt(12000, 22000));
 })();
 
 // LAYER 5: Network Telemetry Interception
@@ -311,6 +413,8 @@ function showToast(message, type) {
         }
     }, 2000);
 
+    var lastRecoveryTimestamp = 0;
+
     setInterval(function () {
         var errorDetected = false;
         var errorType = "";
@@ -367,8 +471,12 @@ function showToast(message, type) {
             }
         }
 
-        if (errorDetected && recoveryAttempts < MAX_RECOVERY) {
+        var now = Date.now();
+        var cooldownPassed = (now - lastRecoveryTimestamp) > 15000;
+
+        if (errorDetected && cooldownPassed && recoveryAttempts < MAX_RECOVERY) {
             recoveryAttempts++;
+            lastRecoveryTimestamp = now;
             console.warn("[CS] Layer 6: Error detected - Type:", errorType, "- Attempt", recoveryAttempts);
 
             if (errorType === "please_wait") {
@@ -381,10 +489,11 @@ function showToast(message, type) {
                     dismissBtns[j].click();
                 }
 
-                if (dismissBtns.length === 0) {
-                    setTimeout(function () {
-                        window.location.reload();
-                    }, 3000 + Math.random() * 4000);
+                // Soft SPA re-navigation after 12s of "Please Wait" without hard tab reload
+                if (pleaseWaitStartTime && (now - pleaseWaitStartTime) > 12000) {
+                    console.warn("[CS] ⚠️ 'Please Wait' kéo dài quá 12s → Chuyển video mềm qua SPA");
+                    showToast("⚠️ Vui lòng chờ kéo dài → Đang chuyển video tiếp...", "warning");
+                    requestNextVideo();
                 }
             } else if (errorType === "403" || errorType === "video_error") {
                 console.warn("[CS] Layer 6: Detected 403 / Access Denied / Blank Page! Triggering Random Liked Video...");
@@ -473,16 +582,6 @@ function checkVideoAudioAndShop() {
     // 2. No Audio / Muted Sound Check
     const video = currentVideoElement;
     let isMuted = false;
-
-    // If video element is muted, attempt to unmute it first rather than skipping
-    if (video) {
-        if (video.muted) {
-            try { video.muted = false; } catch (e) { }
-        }
-        if (video.volume === 0) {
-            try { video.volume = 1.0; } catch (e) { }
-        }
-    }
 
     // Check specific sound/music title containers for copyright muted notices
     if (typeof MUTED_SOUND_KEYWORDS !== "undefined") {
