@@ -2,7 +2,7 @@
 
 # 🎬 TikTok Random Liked ❤️
 
-<p><strong>Chrome / Edge Extension giúp xem ngẫu nhiên các video bạn đã thích (Liked) trên TikTok với trải nghiệm mượt, tự động và ít gián đoạn.</strong></p>
+<p><strong>Chrome / Edge Extension giúp xem ngẫu nhiên các video bạn đã thích trên TikTok với trải nghiệm mượt, tự động và ít gián đoạn.</strong></p>
 
 <p>
   <img src="https://img.shields.io/badge/build-passing-22c55e?style=for-the-badge" alt="build passing" />
@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Snyk%20security-monitored-a855f7?style=for-the-badge" alt="Snyk security monitored" />
 </p>
 
-<p><em>Tự động chuyển video (Auto-Next), chống nhảy sang luồng gợi ý TikTok, bỏ qua video đứng / không âm thanh / TikTok Shop, và tự khôi phục thông minh khi gặp lỗi 403 / Access Denied.</em></p>
+<p><em>Tự động chuyển video, chống nhảy sang luồng gợi ý TikTok, bỏ qua video đứng / không âm thanh / TikTok Shop, và tự khôi phục thông minh khi gặp lỗi 403 / Access Denied.</em></p>
 
 </div>
 
