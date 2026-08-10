@@ -11,6 +11,10 @@ Thay vì phải mở từng video trong danh sách đã thích, extension sẽ t
   <img src="https://img.shields.io/badge/Snyk%20security-monitored-a855f7?style=for-the-badge" alt="Snyk security monitored" />
 </p>
 
+<p><em>Tự động chuyển video (Auto-Next), chống nhảy sang luồng gợi ý TikTok, bỏ qua video đứng / không âm thanh / TikTok Shop, và tự khôi phục thông minh khi gặp lỗi 403 / Access Denied.</em></p>
+
+</div>
+
 ---
 
 ## ✨ Tính năng
