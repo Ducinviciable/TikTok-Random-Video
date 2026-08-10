@@ -1,8 +1,8 @@
-<div align="center">
-
 # 🎬 TikTok Random Liked ❤️
 
-<p><strong>Chrome / Edge Extension giúp xem ngẫu nhiên các video bạn đã thích (Liked) trên TikTok với trải nghiệm mượt, tự động và ít gián đoạn.</strong></p>
+Extension Chrome/Edge giúp bạn **xem video ngẫu nhiên các video đã Like trên TikTok**.
+
+Thay vì phải mở từng video trong danh sách đã thích, extension sẽ tự động thu thập video, chọn ngẫu nhiên và chuyển sang video tiếp theo.
 
 <p>
   <img src="https://img.shields.io/badge/build-passing-22c55e?style=for-the-badge" alt="build passing" />
@@ -11,133 +11,168 @@
   <img src="https://img.shields.io/badge/Snyk%20security-monitored-a855f7?style=for-the-badge" alt="Snyk security monitored" />
 </p>
 
-<p><em>Tự động chuyển video (Auto-Next), chống nhảy sang luồng gợi ý TikTok, bỏ qua video đứng / không âm thanh / TikTok Shop, và tự khôi phục thông minh khi gặp lỗi 403 / Access Denied.</em></p>
+---
 
-</div>
+## ✨ Tính năng
+
+* 🎲 **Random Video Đã Like** — Phát ngẫu nhiên video từ danh sách đã thu thập.
+* ⏭️ **Skip** — Bỏ qua video hiện tại và chuyển sang video khác.
+* 🚫 **Blacklist** — Xóa video hiện tại và không thu thập lại video đó.
+* 🔀 **Auto Next** — Tự động chuyển sang video ngẫu nhiên tiếp theo khi video kết thúc.
+* ➕ **Thu thập thêm** — Quét thêm video mà không xóa dữ liệu hiện có.
+* 🔄 **Thu thập lại** — Xóa dữ liệu video hiện tại và quét lại từ đầu.
+* 📤 **Export** — Xuất danh sách video thành file `.json`.
+* 📥 **Import** — Khôi phục danh sách video từ file backup.
+* 🛠️ **Auto Recovery** — Tự xử lý một số trường hợp video lỗi, đứng hoặc không thể phát.
 
 ---
 
-## ✨ Tính năng nổi bật
+## 🚀 Cài đặt
 
-- 🎲 **Random Video Đã Like** — Mở & xem ngẫu nhiên video từ danh sách đã thích lưu trong bộ nhớ tạm (cache).
-- ⏭️ **Bỏ qua (Skip)** — Bỏ qua video hiện tại và mở ngay video ngẫu nhiên tiếp theo.
-- 🚫 **Xoá vĩnh viễn (Permanent Ban / Blacklist)** — Xoá video hiện tại khỏi danh sách xem và thêm vào "Danh sách đen" (Blacklist) để không bao giờ thu thập lại ở những lần quét sau.
-- 🔀 **Tự chuyển video (Auto-Next Engine)** — Khi video sắp phát xong (còn < 0.5s), extension tự động chọn và phát video ngẫu nhiên tiếp theo.
-- 🛡️ **Bảo vệ vòng lặp (Loop Guard)** — Ép thuộc tính `loop` trên `<video>` để chặn TikTok tự nhảy sang luồng video gợi ý không mong muốn.
-- 📤/📥 **Xuất & Nhập Sao lưu (Export / Import Backup)** — Tải về file `.json` chứa toàn bộ video và danh sách đen để khôi phục nhanh mà không cần quét lại từ đầu.
-- 🤖 **Tự động xử lý sự cố (Auto-Recovery & Anti-403)**:
-  - Tự nhảy video nếu video bị đứng quá 8 giây.
-  - Tự nhảy video nếu phát hiện video bị tắt tiếng (Muted / No Audio).
-  - Tự nhảy video nếu gặp video quảng cáo TikTok Shop.
-  - Tự chuyển ngẫu nhiên video mới nếu gặp lỗi 403 Access Denied, Cloudflare hoặc trang trắng.
-- 🔄 **Chạy ẩn nền (Background Playback)** — Vượt qua cơ chế Pause khi chuyển tab của TikTok nhờ bộ mô phỏng hành vi 6 lớp (Visibility, Focus, Activity Simulation, Telemetry Block).
-- ⌨️ **Phím tắt toàn cục (Global Shortcut)** — Nhấn `Ctrl+Shift+9` (hoặc `Cmd+Shift+9` trên Mac) để bỏ qua video bất kỳ lúc nào.
+### 1. Tải project
 
----
+Clone repository hoặc tải project về máy.
 
-## 📂 Cấu trúc dự án (Project Structure)
+### 2. Mở Extension
 
-### Cây thư mục chi tiết & Vai trò từng file
+**Chrome:**
 
-```
-Random-Video/
-├── manifest.json              # Cấu hình gốc Manifest V3: permissions, content scripts, background service worker, commands
-├── background.js              # Service worker trung tâm: route message, quản lý tab, chọn video ngẫu nhiên, watchdog 403 / trang trắng
-├── bg-playback.js             # Logic phát video: skip, ban, auto-next, delay điều hướng, lưu trạng thái phát
-├── bg-collections.js          # Logic thu thập video: job cuộn trang, retry khi timeout, điều phối luồng collect từ profile
-├── content.js                 # Entry point của content script: lắng nghe message, theo dõi SPA navigation, kích hoạt watcher
-├── popup.html                 # HTML của popup extension: bố cục giao diện điều khiển chính
-├── popup.js                   # Xử lý sự kiện UI trong popup: gọi background, cập nhật trạng thái, import/export dữ liệu
-├── style.css                  # Styles cho popup: layout, theme, hiệu ứng, trạng thái nút
-├── README.md                  # Tài liệu hướng dẫn, mô tả kiến trúc và cách dùng
-├── icons/                     # Thư mục chứa icon của extension
-│   └── icon.png               # Biểu tượng hiển thị trên toolbar của trình duyệt
-├── js/                        # Nhóm file content script chạy trong ngữ cảnh trang TikTok
-│   ├── selectors.js           # Tập trung selector DOM, keyword nhận diện video lỗi / shop / trạng thái trang
-│   ├── content-utils.js       # Hàm tiện ích: parse URL, trích xuất metadata, xử lý thumbnail
-│   ├── content-bypass.js      # Các lớp bypass / anti-detection: visibility, focus, telemetry, activity simulation
-│   ├── content-checkpoint.js  # Lưu / phục hồi checkpoint để tiếp tục quét khi bị ngắt quãng
-│   ├── content-video.js       # Video watcher, loop guard, auto-next engine, recovery khi video đứng
-│   └── content-core.js        # Luồng thu thập chính: scroll, observe lazy-load, gom danh sách video vào storage
-└── docs/                      # Tài liệu kỹ thuật, kế hoạch và ghi chú vận hành
-  ├── Bypass.md              # Ghi chú kỹ thuật về cơ chế bypass / anti-detection
-  ├── EXPECTED.MD            # Hành vi mong đợi của hệ thống sau khi chạy đúng
-  ├── implementation_plan.md # Kế hoạch audit / tối ưu / refactor đang áp dụng
-  ├── playback-debug-plan.md # Kế hoạch debug lỗi phát video, log và telemetry
-  └── random-play-flow.md    # Mô tả luồng phát ngẫu nhiên end-to-end
+```text
+chrome://extensions/
 ```
 
-### Cách các phần phối hợp với nhau
+**Edge:**
 
-- `popup.html` và `popup.js` tạo giao diện điều khiển cho người dùng, còn `background.js` là nơi xử lý logic thực sự.
-- `background.js` chỉ điều phối bằng message và tab API, không làm việc trực tiếp với DOM.
-- Các file trong `js/` chạy trong content script, chịu trách nhiệm quan sát trang TikTok, thu thập video và điều khiển playback.
-- Dữ liệu video đã thích, danh sách đen và trạng thái phát được lưu trong `chrome.storage.local` để dùng xuyên suốt các lần chuyển tab.
+```text
+edge://extensions/
+```
 
----
+### 3. Bật Developer Mode
 
-## 🎮 Bảng điều khiển & Nút chức năng
+Bật **Developer mode** → chọn **Load unpacked** → chọn thư mục project.
 
-| Nút / Thao tác                  | Chức năng                                                                                     |
-| ------------------------------- | --------------------------------------------------------------------------------------------- |
-| 🎲 **Random Video Đã Like**     | Phát ngẫu nhiên 1 video từ danh sách cache. Nếu cache trống sẽ tự động điều hướng quét video. |
-| ⏭️ **Bỏ qua**                   | Bỏ qua video đang xem và mở ngay video ngẫu nhiên tiếp theo.                                  |
-| 🚫 **Xoá vĩnh viễn**            | Xoá video đang xem khỏi bộ nhớ và đưa vào Danh sách đen (không bao giờ thu thập lại).         |
-| 🔄 **Thu thập lại từ đầu**      | Xoá bộ nhớ tạm hiện tại và thực hiện quét lại từ đầu trang cá nhân.                           |
-| ➕ **Thu thập thêm video**      | Cuộn quét bổ sung các video mới mà vẫn giữ nguyên các video đã lưu.                           |
-| 📤 **Xuất Backup**              | Tải về file sao lưu `.json` chứa danh sách video và danh sách đen.                            |
-| 📥 **Nhập Backup**              | Khôi phục danh sách video từ file sao lưu `.json` có sẵn.                                     |
-| 🔀 **Tự chuyển video** (Toggle) | Bật/Tắt chế độ tự động nhảy video ngẫu nhiên tiếp theo khi hết bài.                           |
+Sau khi cài đặt, icon **TikTok Random Liked ❤️** sẽ xuất hiện trên trình duyệt.
 
 ---
 
-## ⚙️ Cơ chế hoạt động kỹ thuật
+## 🎮 Cách sử dụng
 
-### 1. Luồng Thu thập (Collection Engine)
+### Bước 1 — Đăng nhập TikTok
 
-1. Điều hướng tab TikTok đến trang `@username`.
-2. Tự động click tab **Đã thích (Liked)**.
-3. Sử dụng `MutationObserver` kết hợp tự động cuộn (Auto-scroll) để trigger lazy-load của TikTok.
-4. Lọc bỏ các URL đã có trong `blacklistedVideos` (Danh sách đen).
-5. Lưu danh sách vào `chrome.storage.local`.
+Đăng nhập tài khoản TikTok của bạn trên Chrome/Edge.
 
-### 2. Luồng Phát & Tự nhảy Video (Auto-Next Engine)
+### Bước 2 — Mở Extension
 
-1. `initVideoWatcher()` tìm thẻ `<video>` lớn nhất trên trang `/video/`.
-2. Gắn thuộc tính `loop` để vô hiệu hoá tính năng tự nhảy bài gợi ý của TikTok.
-3. Theo dõi sự kiện `timeupdate`: khi thời gian còn lại `< 0.5s`, gỡ `loop`, tạm dừng video và gửi yêu cầu `playNext` tới Service Worker background.
-4. `background.js` gọi `selectRandomVideo()` chọn video chưa phát, sau đó cập nhật URL bằng `chrome.tabs.update()`.
+Nhấn icon **TikTok Random Liked ❤️**.
 
-### 3. Bộ phòng vệ 6 lớp (6-Layer Anti-Detection & Recovery)
+### Bước 3 — Nhập tài khoản
 
-- **Layer 1 (Visibility Bypass)**: Ghi đè `document.hidden = false`, `visibilityState = "visible"`, chặn sự kiện `visibilitychange`.
-- **Layer 2 (Focus Bypass)**: Ghi đè `document.hasFocus() = true`, chặn sự kiện `blur`, định kỳ phát sự kiện `focus` giả lập.
-- **Layer 3 (Navigator Spoof)**: Spoof `navigator.webdriver = false`, giả lập danh sách `plugins` và `languages`.
-- **Layer 4 (Human Simulation)**: Tự động giả lập `mousemove`, `pointermove`, `scroll` ngẫu nhiên.
-- **Layer 5 (Telemetry Block)**: Chặn các request theo dõi hành vi bot (`/api/v1/report`, `slardar`, `mon.tiktokv.com`, `sendBeacon`).
-- **Layer 6 (Error & 403 Recovery)**: Phát hiện trang trắng/403 Access Denied hoặc overlay lỗi và tự động chuyển video mới.
+Nhập username TikTok, ví dụ:
 
----
+```text
+@username
+```
 
-## 🚀 Hướng dẫn cài đặt
+### Bước 4 — Thu thập video
 
-1. Tải về hoặc clone repository này về máy.
-2. Mở trình duyệt **Chrome** hoặc **Edge**.
-3. Truy cập địa chỉ:
-   - Chrome: `chrome://extensions/`
-   - Edge: `edge://extensions/`
-4. Bật chế độ **Developer mode (Chế độ dành cho nhà phát triển)** ở góc trên bên phải.
-5. Bấm **Load unpacked (Tải tiện ích đã giải nén)** → chọn thư mục của dự án này.
-6. Icon extension ❤️ sẽ xuất hiện trên thanh công cụ trình duyệt.
+Nếu chưa có dữ liệu, extension sẽ tự động vào danh sách **Liked** và thu thập video.
+
+Bạn có thể:
+
+* **Thu thập lại** → quét lại từ đầu.
+* **Thu thập thêm** → giữ video cũ và tìm thêm video mới.
+
+### Bước 5 — Random
+
+Nhấn:
+
+> 🎲 **Random Video Đã Like**
+
+Extension sẽ chọn một video ngẫu nhiên từ danh sách đã thu thập.
 
 ---
 
-## 📖 Hướng dẫn sử dụng
+## 🎛️ Các nút chức năng
 
-1. Đăng nhập vào **www.tiktok.com** trên trình duyệt.
-2. Bấm vào biểu tượng **TikTok Random Liked** trên thanh công cụ.
-3. Nhập ID TikTok của bạn (ví dụ: `@username`).
-4. Bấm **"Random Video Đã Like 🎲"**.
-5. Thưởng thức các video yêu thích ngẫu nhiên liên tục!
+| Chức năng       | Mô tả                            |
+| --------------- | -------------------------------- |
+| 🎲 Random       | Phát một video Like ngẫu nhiên   |
+| ⏭️ Skip         | Bỏ qua video hiện tại            |
+| 🚫 Xóa vĩnh viễn| Xóa và không thu thập lại video  |
+| ➕ Thu thập thêm | Tìm thêm video mới               |
+| 🔄 Thu thập lại | Xóa dữ liệu hiện tại và quét lại |
+| 📤 Export       | Sao lưu dữ liệu thành `.json`    |
+| 📥 Import       | Khôi phục dữ liệu từ `.json`     |
+| 🔀 Auto Next    | Tự động chuyển video tiếp theo   |
 
 ---
+
+## 💾 Dữ liệu
+
+Extension lưu dữ liệu cục bộ trong trình duyệt, bao gồm:
+
+* Danh sách video đã thu thập.
+* Danh sách video đã phát.
+* Danh sách Blacklist.
+* Trạng thái của quá trình thu thập.
+
+Dữ liệu **không cần phải thu thập lại mỗi lần mở extension**.
+
+### 💡 Nên Export Backup
+
+Nếu bạn đã thu thập nhiều video, nên sử dụng **Export** để tạo file backup.
+
+Khi cần khôi phục, chỉ cần sử dụng **Import**.
+
+---
+
+## ⌨️ Phím tắt
+
+Bạn có thể sử dụng:
+
+```text
+Ctrl + Shift + 9
+```
+
+để **Skip video hiện tại**.
+
+Trên macOS:
+
+```text
+Cmd + Shift + 9
+```
+
+---
+
+## 📁 Cấu trúc project
+
+```text
+TikTok-Random-Liked/
+├── manifest.json
+├── background.js
+├── bg-playback.js
+├── bg-collections.js
+├── content.js
+├── popup.html
+├── popup.js
+├── style.css
+├── icons/
+├── js/
+└── docs/
+```
+
+---
+
+## ⚠️ Lưu ý
+
+* Extension yêu cầu bạn **đăng nhập TikTok** trên trình duyệt.
+* Extension hoạt động dựa trên giao diện và hành vi hiện tại của TikTok. Nếu TikTok thay đổi giao diện hoặc API nội bộ, một số chức năng có thể cần cập nhật.
+* Nên **Export Backup** trước khi thực hiện các thao tác thu thập lại hoặc thay đổi dữ liệu lớn.
+
+---
+
+## ❤️ Mục đích
+
+**TikTok Random Liked** được tạo để giúp việc xem lại những video bạn đã Like trở nên đơn giản hơn:
+
+> **Collect → Random → Watch → Skip → Repeat 🎬**
