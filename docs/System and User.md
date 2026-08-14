@@ -219,7 +219,7 @@ Kết quả khả dĩ:
 - thời gian: phụ thuộc `targetLimit`, `baseInterval = 1000`, `extraDelay`, và các lần nghỉ 2.5s sau 100 vòng,
 - CPU/RAM: tăng theo thời gian chạy dài hơn vì observer, scroll và check progress diễn ra liên tục,
 - mạng: có thể tăng khi TikTok nạp thêm dữ liệu khi scroll,
-- số lần cuộn: xấp xỉ phụ thuộc `limit` vì `maxScrolls = Math.ceil(targetLimit / 10) + 15`,
+- số lần cuộn: xấp xỉ phụ thuộc `limit` vì `maxScrolls = Math.ceil((existingCount + targetLimit) / 10) + 15`,
 - rủi ro bị chặn: không thể kết luận định lượng, nhưng thời gian chạy dài hơn đồng nghĩa số vòng hoạt động nhiều hơn.
 
 Giá trị `Số lượng video cần thu thập` nên chọn:
@@ -269,7 +269,7 @@ Từ code hiện tại, hệ thống là **kết hợp cả hai**:
 Trong `js/content-core.js`:
 
 - `targetLimit = targetLimit || 100`
-- `maxScrolls = Math.ceil(targetLimit / 10) + 15`
+- `maxScrolls = Math.ceil((existingCount + targetLimit) / 10) + 15`
 - dừng nếu `newCollectedCount >= targetLimit`
 - dừng nếu `scrollCount >= maxScrolls`
 - dừng nếu `noNewCount >= 4`
@@ -295,62 +295,47 @@ Ví dụ: “Lần trước tôi đã quét đến khoảng video thứ 1700. B�
 
 ### 5.1 Có thực sự hỗ trợ việc này không?
 
-Từ code hiện tại, **không có cơ chế đảm bảo bắt đầu chính xác từ video 1701**.
+**CÓ, hệ thống hỗ trợ việc này một cách mạnh mẽ thông qua cơ chế Catch-Up Phase (Giai đoạn Bắt kịp).** 
 
-Lý do:
+Mặc dù TikTok Web không hỗ trợ API offset trực tiếp nhảy tới video 1701 (trình duyệt vẫn phải cuộn từ đầu danh sách Liked xuống), hệ thống đã tối ưu hóa toàn bộ quá trình cuộn qua vùng dữ liệu cũ này:
 
-- `startCollection(...)` không lưu một “con trỏ vị trí” cuộn theo số thứ tự video.
-- Không có biến nào thể hiện offset như “đã tới video 1700 thì bắt đầu từ 1701”.
-- Việc thu thập phụ thuộc vào DOM hiện tại, `MutationObserver`, `autoScroll(...)`, và trạng thái storage.
+* **Không bị dừng sớm**: `noNewCount` bị đóng băng ở `0` khi đang cuộn qua vùng 1700 video cũ. Nhờ vậy, phiên cào không bao giờ bị dừng giữa chừng.
+* **Tốc độ cực nhanh (Fast Catch-Up)**: Thời gian cuộn rút xuống còn **300–500ms** cho mỗi lần cuộn thay vì tốc độ tự nhiên.
+* **Bỏ qua xử lý nặng**: Bỏ qua giải mã và trích xuất thumbnail đối với 1700 video cũ để tránh quá tải bộ nhớ và CPU.
 
 ### 5.2 Dữ liệu nào được sử dụng lại?
 
 Các dữ liệu được dùng lại gồm:
 
-- `likedVideos` trong `chrome.storage.local`
-- `blacklistedVideos` trong `chrome.storage.local`
-- `collectedAt`
-- `playedVideos` trong một số flow playback
+- `likedVideos` trong `chrome.storage.local` (chứa danh sách URL và thumbnail đã quét lần trước).
+- `blacklistedVideos` trong `chrome.storage.local`.
+- `collectedAt`.
+- `playedVideos` trong một số flow playback.
 
-Trong `startCollection(...)`:
-
-- nếu `continueFromCurrent = true`, nó đọc `likedVideos` và nạp lại vào `collectedMap` / `existingUrls`.
-- nếu `appendMode = true`, nó cũng đọc `likedVideos` rồi tiếp tục nối thêm.
+Khi người dùng chọn **Quét tiếp (Deep Append)**:
+1. `appendMode = true` và `isDeepAppend = true` được thiết lập.
+2. Dữ liệu từ `likedVideos` sẽ được tải vào bộ nhớ dưới dạng tập hợp đối chiếu (`existingUrlsSet`).
+3. Phiên cào khởi động với cờ `isCatchingUp = true`.
 
 ### 5.3 Storage nào liên quan?
 
 Liên quan trực tiếp:
 
-- `chrome.storage.local.likedVideos`
-- `chrome.storage.local.blacklistedVideos`
-- `chrome.storage.local.collectedAt`
-- `chrome.storage.local.checkpoint`
+- `chrome.storage.local.likedVideos` (Lưu 1700 video cũ).
+- `chrome.storage.local.blacklistedVideos`.
+- `chrome.storage.local.collectedAt`.
+- `chrome.storage.local.checkpoint` (Checkpoint ghi đè/nối thêm dữ liệu).
 
 ### 5.4 Hệ thống có bắt đầu từ video 1701 hay vẫn quét lại từ đầu?
 
-Theo code:
-
-- hệ thống **không có bằng chứng** cho việc bắt đầu chính xác từ video 1701,
-- nó có thể nối tiếp từ trạng thái trang hiện tại hoặc tiếp tục quét từ vị trí DOM hiện có,
-- nhưng không có cơ chế xác định “video thứ 1700” trong code hiện tại.
+* Về mặt giao diện TikTok: Trình duyệt vẫn phải cuộn từ trên cùng của trang cá nhân xuống dưới.
+* Về mặt logic xử lý: Hệ thống lướt nhanh qua 1700 video cũ mà **không thực hiện lưu trữ trùng lặp**. Chỉ khi cuộn vượt qua video thứ 1700 và phát hiện video mới đầu tiên (video thứ 1701), hệ thống mới tắt `isCatchingUp`, hạ tốc độ cuộn về bình thường (700–1300ms) và tiến hành lưu trữ đầy đủ.
 
 ### 5.5 Khi nào sẽ xuất hiện video trùng?
 
-Theo code, video trùng có thể xuất hiện khi:
-
-- quét lại từ đầu,
-- quét tiếp mà dữ liệu cũ vẫn còn trong `likedVideos`,
-- `appendMode = true` nhưng DOM nạp lại những video đã có,
-- `smartStop` không dừng sớm đủ nhanh.
-
-Code có một số cơ chế giảm trùng:
-
-- `existingUrls`
-- `collectedMap`
-- `blacklistedSet`
-- lọc theo `url.split("?")[0]`
-
-Nhưng **không có bằng chứng** cho việc loại trùng tuyệt đối trên toàn bộ mọi đường đi.
+Nhờ cơ chế lọc trùng bằng tập hợp `existingUrlsSet` dựa trên URL đã được chuẩn hóa (`url.split("?")[0]`), **tỷ lệ video trùng lặp gần như bằng không**:
+* Video cũ đã tồn tại trong `likedVideos` sẽ chỉ đóng vai trò mốc so khớp để thoát khỏi giai đoạn Catch-up.
+* Chỉ những URL chưa từng xuất hiện trong `likedVideos` mới được gom thêm vào bộ nhớ và đồng bộ với storage.
 
 ---
 

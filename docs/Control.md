@@ -81,7 +81,7 @@ newCollectedCount >= targetLimit
 Giới hạn số lần cuộn tối đa:
 
 ```text
-maxScrolls = ceil(targetLimit / 10) + 15
+maxScrolls = ceil((existingCount + targetLimit) / 10) + 15
 ```
 
 Điều này giúp giới hạn thời gian chạy trong trường hợp trang không thể cung cấp thêm dữ liệu.
@@ -121,6 +121,8 @@ noNewCount >= 4
 ```
 
 engine coi trang không còn dữ liệu mới và dừng collection.
+
+**Đặc biệt (Catch-Up Phase)**: Khi đang cuộn qua vùng video đã biết ở chế độ quét tiếp (`isCatchingUp = true`), bộ đếm `noNewCount` được đóng băng bằng `0` để tránh dừng sớm trước khi tiếp cận vùng video mới thực sự.
 
 ### Scroll Height Detection
 
@@ -166,6 +168,9 @@ thêm `600ms` delay và chuyển trạng thái sang:
 slow_network
 ```
 
+**Fast Catch-Up Mode**:
+Trong giai đoạn Catch-Up (`isCatchingUp = true`), độ trễ giữa các lần cuộn được giảm đáng kể xuống còn **300–500ms** ngẫu nhiên. Đồng thời, hệ thống bỏ qua việc giải mã và lưu thumbnail của video cũ nhằm tối ưu hóa CPU và RAM. Khi vượt qua vùng dữ liệu cũ, hệ thống tự động quay lại thời gian chờ nguyên bản (700–1300ms + delay bổ sung).
+
 ---
 
 ## 3.2 DOM Rest
@@ -184,6 +189,8 @@ engine tạm nghỉ:
 
 Mục đích là giảm áp lực CPU/RAM trong các phiên collection dài.
 
+*Lưu ý*: Giai đoạn Catch-Up (`isCatchingUp = true`) bỏ qua trạng thái nghỉ này để hoàn tất bắt kịp dữ liệu cũ nhanh nhất có thể.
+
 ---
 
 ## 3.3 DOM Cleanup
@@ -200,9 +207,9 @@ extension giữ lại khoảng:
 150 items
 ```
 
-và loại bỏ các card cũ hơn.
+và loại bỏ các card cũ hơn để tránh quá tải bộ nhớ trình duyệt (hữu ích cho các phiên chạy dài >2 tiếng).
 
-Dữ liệu cần thiết như URL và thumbnail được lưu vào collection trước khi DOM cleanup thực hiện.
+Dữ liệu cần thiết như URL và thumbnail được trích xuất hoàn tất vào `collectedMap` và đồng bộ qua checkpoint (`saveCheckpointData`) trước khi DOM node bị xóa thực sự, nhằm đảm bảo không thất thoát dữ liệu.
 
 ---
 
@@ -280,7 +287,7 @@ mỗi:
 
 để kiểm tra content script còn hoạt động trước khi gửi command collection.
 
-### Error Page Recovery
+### Error Page Recovery (403 / Access Denied / WAF Blocks)
 
 Các trạng thái như:
 
@@ -288,17 +295,19 @@ Các trạng thái như:
 403
 Access Denied
 Forbidden
+Just a Moment (WAF challenge)
 ```
 
-được phát hiện từ title/tab state.
+được phát hiện từ `tab.title` hoặc `url` của tab (kể cả chrome-error/edge-error).
 
-Background chờ:
+Thay vì reload cứng hoặc gọi lại liên tiếp, background áp dụng **Tiered Cooldown (Exponential Backoff)** để phòng chống bot-detection:
 
-```text
-5000ms
-```
+* **1st block (Liên tiếp lần 1)**: Cooldown **10s** (tạm nghỉ trước khi hồi phục).
+* **2nd block (Liên tiếp lần 2)**: Cooldown **20s** (tăng thời gian nghỉ).
+* **3rd block (Liên tiếp lần 3+)**: Deep sleep **65s** và gửi Toast cảnh báo lên màn hình người dùng.
+* Bộ đếm liên tiếp tự động reset về `0` sau **5 phút** hoạt động bình thường không gặp lỗi.
 
-sau đó điều hướng lại profile để recovery.
+Đồng thời, Watchdog của background áp dụng **đệm trễ 1.8s (Anti-Stampeding delay)** trước khi can thiệp điều hướng để tránh xung đột hoặc tranh chấp với các luồng tự phục hồi nội tại của Content Script (SPA navigation `navigateToVideo` luôn được ưu tiên hàng đầu).
 
 ---
 
@@ -413,13 +422,11 @@ Video được kiểm tra định kỳ mỗi:
 1s
 ```
 
-Nếu `currentTime` gần như không thay đổi trong:
+Nếu `currentTime` gần như không thay đổi:
 
-```text
-8s
-```
-
-engine coi video là stuck và chuyển sang video tiếp theo.
+* **Giây thứ 4**: Ghi nhận log chẩn đoán `STUCK` nội bộ.
+* **Giây thứ 5**: Kích hoạt **Soft Recovery** (`load()` + `currentTime = 0.05` + `play()`) để đánh thức video bị đơ.
+* **Giây thứ 6**: Coi video là stuck thực sự và thực hiện skip chuyển sang video tiếp theo.
 
 ---
 
@@ -452,16 +459,10 @@ Nếu phát hiện, video sẽ được skip sau khoảng:
 Extension kiểm tra video định kỳ:
 
 ```text
-2000ms
+1500ms
 ```
 
-Nếu video bị `paused` ngoài dự kiến, engine thử gọi:
-
-```javascript
-video.play()
-```
-
-để khôi phục playback.
+Nếu video bị `paused` ngoài dự kiến, engine tự động gọi `video.play()` để khôi phục playback.
 
 ## "Please Wait" Recovery
 
@@ -471,13 +472,12 @@ Kiểm tra overlay định kỳ:
 4000ms
 ```
 
-Nếu trạng thái `"Please Wait"` tồn tại quá:
+Nếu trạng thái `"Please Wait"` (hoặc các lớp overlay modal lỗi khác) xuất hiện và tồn tại kéo dài quá **12 giây**, hệ thống kích hoạt **Chuỗi phục hồi mềm (Phase A-D)**:
 
-```text
-12s
-```
-
-engine chuyển sang video khác thông qua SPA navigation.
+* **Phase A**: Cuộn nhẹ lên/xuống ($\pm 50\text{px}$) để ép trình duyệt tính toán lại layout.
+* **Phase B**: Dispatch các sự kiện focus/visibility giả để đánh thức renderer của tab.
+* **Phase C**: Tạm chờ thêm **5 giây** xem lỗi có tự biến mất không.
+* **Phase D**: Nếu vẫn bị kẹt sau Phase A-C, chuyển sang video tiếp theo thông qua cơ chế SPA navigation (`requestNextVideo`).
 
 ## 403 / Blank Page
 
@@ -598,21 +598,24 @@ chrome.storage.local
 
 # 14. Main Parameters
 
-| Parameter           |                 Giá trị | Vai trò                        |
-| ------------------- | ----------------------: | ------------------------------ |
-| `targetLimit`       |          `100` mặc định | Số video mục tiêu              |
-| `maxScrolls`        | `ceil(limit / 10) + 15` | Giới hạn scroll                |
-| `noNewCount`        |                     `4` | Dừng khi không có video mới    |
-| `sameHeightCount`   |                     `5` | Dừng khi page height không đổi |
-| `smartStop`         |            `true/false` | Dừng khi gặp dữ liệu cũ        |
-| Checkpoint interval |                   `10s` | Lưu progress                   |
-| Checkpoint batch    |             `30 videos` | Lưu progress                   |
-| DOM rest            |           `100 scrolls` | Nghỉ giảm tải                  |
-| DOM rest delay      |                `2500ms` | Thời gian nghỉ                 |
-| Collection timeout  |                   `20s` | Job timeout                    |
-| Ping interval       |                `2000ms` | Health check                   |
-| Stuck timeout       |                    `8s` | Phát hiện video đứng           |
-| Watchdog interval   |                `3000ms` | Giám sát playback              |
+| Parameter           |                                 Giá trị | Vai trò                        |
+| ------------------- | --------------------------------------: | ------------------------------ |
+| `targetLimit`       |                          `100` mặc định | Số video mục tiêu              |
+| `maxScrolls`        | `ceil((existing + targetLimit)/10) + 15` | Giới hạn scroll                |
+| `noNewCount`        |                                     `4` | Dừng khi không có video mới    |
+| `sameHeightCount`   |                                     `5` | Dừng khi page height không đổi |
+| `smartStop`         |                            `true/false` | Dừng khi gặp dữ liệu cũ        |
+| Checkpoint interval |                                   `10s` | Lưu progress                   |
+| Checkpoint batch    |                             `30 videos` | Lưu progress                   |
+| DOM rest            |                           `100 scrolls` | Nghỉ giảm tải                  |
+| DOM rest delay      |                                `2500ms` | Thời gian nghỉ                 |
+| Collection timeout  |                                   `20s` | Job timeout                    |
+| Ping interval       |                                `4500ms` | Trễ kiểm tra trước khi ping    |
+| Stuck timeout       |                                     `6s` | Phát hiện video đứng (stuck)   |
+| Watchdog interval   |                                `3000ms` | Giám sát playback              |
+| Cooldown Tier 1     |                                   `10s` | Phục hồi lỗi 403 lần 1         |
+| Cooldown Tier 2     |                                   `20s` | Phục hồi lỗi 403 lần 2 liên tiếp |
+| Cooldown Tier 3     |                                   `65s` | Phục hồi lỗi WAF lần 3+ liên tiếp |
 
 ---
 

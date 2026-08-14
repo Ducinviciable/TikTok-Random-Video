@@ -103,7 +103,7 @@ logPlaybackDiagnostics("VIDEO_BOUND", currentVideoElement);
 ### Point 3: Layer 6 Forced Playback Recovery Interval
 * **File:** [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js)
 * **Function:** `initPlaybackRecovery()`
-* **Placement:** Inside the 2-second recovery `setInterval` loop when `v.paused === true`.
+* **Placement:** Inside the 1.5-second recovery `setInterval` loop when `v.paused === true`.
 * **Purpose:** Determines if `v.play().catch()` is actively being executed or if browser background throttling is freezing the `setInterval` timer entirely.
 
 #### Code Snippet to Insert:
@@ -128,7 +128,7 @@ if (v.paused && v.src && v.duration && v.duration > 0 && !v.ended) {
 
 ---
 
-### Point 4: 8-Second Stuck Video Monitor Interval
+### Point 4: 6-Second Stuck Video Monitor Interval
 * **File:** [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js)
 * **Function:** `startStuckMonitor()`
 * **Placement:** Inside the 1-second `stuckInterval` loop when `stuckSeconds > 0`.
