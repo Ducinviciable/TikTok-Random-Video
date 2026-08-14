@@ -48,6 +48,45 @@ async function selectRandomVideo(excludeUrl = "") {
   };
 }
 
+async function peekNextVideo(excludeUrl = "") {
+  const data = await chrome.storage.local.get([
+    "likedVideos",
+    "playedVideos",
+    "blacklistedVideos",
+  ]);
+  const videos = data.likedVideos || [];
+  const played = data.playedVideos || [];
+  const blacklist = new Set(data.blacklistedVideos || []);
+
+  const validVideos = videos.filter(
+    (v) => !blacklist.has(getUrl(v).split("?")[0]),
+  );
+  if (validVideos.length === 0) return null;
+
+  const targetExclude = excludeUrl.split("?")[0];
+  let pool = validVideos.filter(
+    (v) => getUrl(v).split("?")[0] !== targetExclude,
+  );
+  if (pool.length === 0) pool = validVideos;
+
+  const playedSet = new Set(played);
+  let unplayedPool = pool.filter(
+    (v) => !playedSet.has(getUrl(v).split("?")[0]),
+  );
+
+  if (unplayedPool.length === 0) {
+    unplayedPool = pool;
+  }
+
+  const selectedVideo =
+    unplayedPool[Math.floor(Math.random() * unplayedPool.length)];
+  const selectedUrl = getUrl(selectedVideo);
+
+  return {
+    url: selectedUrl,
+  };
+}
+
 async function handleSkipAndPlayNext() {
   const tab = await findTikTokTab();
   if (!tab) {

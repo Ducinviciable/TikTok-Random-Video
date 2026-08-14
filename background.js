@@ -9,7 +9,91 @@ let progressState = {
 };
 
 let tabNavTimestamps = {};
+
+let consecutive403Count = 0;
 let last403TriggerTime = 0;
+let isRecoveryInProgress = false;
+let errorFreeResetTimer = null;
+
+function getTieredCooldown(count) {
+  if (count <= 1) return 10000;
+  if (count === 2) return 20000;
+  return 65000;
+}
+
+function resetErrorFreeWindow() {
+  if (errorFreeResetTimer) clearTimeout(errorFreeResetTimer);
+  // Reset consecutive counter after 5 minutes of stable error-free playback
+  errorFreeResetTimer = setTimeout(() => {
+    if (consecutive403Count > 0) {
+      console.log(
+        `[BG] 🛡️ 5-minute error-free window reached. Resetting consecutive403Count (${consecutive403Count} -> 0).`,
+      );
+      consecutive403Count = 0;
+    }
+  }, 300000);
+}
+
+async function triggerTiered403Recovery(reason, tabId = null) {
+  if (isRecoveryInProgress) {
+    console.log(
+      `[BG] ⏳ Recovery already in progress, skipping duplicate request (${reason}).`,
+    );
+    return;
+  }
+
+  const now = Date.now();
+  consecutive403Count++;
+  const cooldownMs = getTieredCooldown(consecutive403Count);
+
+  if (now - last403TriggerTime < cooldownMs && last403TriggerTime > 0) {
+    console.log(
+      `[BG] ⏳ Tiered Cooldown active (${(cooldownMs / 1000).toFixed(0)}s). Skipping stampede (${reason}).`,
+    );
+    return;
+  }
+
+  last403TriggerTime = now;
+  isRecoveryInProgress = true;
+
+  console.warn(
+    `[BG] 🛡️ Tiered 403 Recovery (Tier ${consecutive403Count > 2 ? 3 : consecutive403Count} - ${consecutive403Count} consecutive). Reason: "${reason}". Cooldown: ${(cooldownMs / 1000).toFixed(0)}s`,
+  );
+
+  // If Tier 3+ (consecutive blocks), surface a user-friendly hint toast
+  if (consecutive403Count >= 3) {
+    try {
+      const activeTab = tabId ? { id: tabId } : await findTikTokTab();
+      if (activeTab && activeTab.id) {
+        chrome.tabs
+          .sendMessage(activeTab.id, {
+            action: "showWarningToast",
+            message:
+              "⚠️ Phát hiện chặn WAF liên tục. Đang tạm nghỉ 60s để phục hồi...",
+          })
+          .catch(() => { });
+      }
+    } catch (e) { }
+  }
+
+  // Wait the backoff cooldown before navigating
+  await randomDelay(Math.floor(cooldownMs * 0.8), cooldownMs);
+
+  try {
+    const data = await chrome.storage.local.get([
+      "targetLimit",
+      "tiktokUsername",
+    ]);
+    const limit = data.targetLimit || 100;
+    const username = data.tiktokUsername || "";
+    await handleRandomLiked(limit, username);
+    resetErrorFreeWindow();
+  } catch (err) {
+    console.warn("[BG] Tiered recovery navigation failed:", err);
+  } finally {
+    isRecoveryInProgress = false;
+  }
+}
 
 function randomDelay(minMs, maxMs) {
   const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
@@ -124,15 +208,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case "handle403Detected":
       console.warn(
-        "[BG] 403 / Blank page message received! Auto-triggering randomLiked...",
+        "[BG] 403 / Blank page message received from CS! Triggering tiered recovery...",
       );
-      chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
-        const limit = data.targetLimit || 100;
-        const username = data.tiktokUsername || "";
-        handleRandomLiked(limit, username)
-          .then(sendResponse)
-          .catch((e) => sendResponse({ success: false, message: e.message }));
-      });
+      triggerTiered403Recovery(
+        "CS_handle403Detected",
+        sender.tab && sender.tab.id ? sender.tab.id : null,
+      )
+        .then(() => sendResponse({ success: true }))
+        .catch((e) => sendResponse({ success: false, message: e.message }));
       return true;
 
     case "collectMore":
@@ -169,6 +252,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       handlePlayNext(sender.tab && sender.tab.id ? sender.tab.id : null)
         .then(sendResponse)
         .catch((e) => sendResponse({ success: false, message: e.message }));
+      return true;
+
+    case "peekNextVideo":
+      peekNextVideo(
+        request.currentUrl ||
+        (sender.tab && sender.tab.url ? sender.tab.url : ""),
+      )
+        .then((res) => sendResponse(res || { url: null }))
+        .catch(() => sendResponse({ url: null }));
       return true;
 
     case "saveCheckpoint":
@@ -471,24 +563,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       tab.url.includes("edge-error"))
   ) {
     if (is403OrErrorTab(tab)) {
-      const now = Date.now();
-      if (now - last403TriggerTime > 3000) {
-        last403TriggerTime = now;
-        console.warn(
-          `[BG] Detected 403/Access Denied/Error tab (title: "${tab.title}", url: "${tab.url}"). Auto-triggering randomLiked...`,
-        );
-        setTimeout(() => {
-          chrome.storage.local.get(
-            ["targetLimit", "tiktokUsername"],
-            (data) => {
-              handleRandomLiked(
-                data.targetLimit || 100,
-                data.tiktokUsername || "",
-              );
-            },
-          );
-        }, 1000);
-      }
+      // 1.8s buffer delay to avoid racing with Content Script's own recovery
+      setTimeout(() => {
+        triggerTiered403Recovery(`tabs.onUpdated: "${tab.title}"`, tab.id);
+      }, 1800);
     }
   }
 });
@@ -501,15 +579,10 @@ setInterval(async () => {
     const now = Date.now();
 
     if (is403OrErrorTab(tab)) {
-      if (now - last403TriggerTime > 3000) {
-        last403TriggerTime = now;
-        console.warn(
-          `[BG Watchdog] Active TikTok tab is in 403/Error state ("${tab.title}"). Auto-switching to next random video...`,
-        );
-        chrome.storage.local.get(["targetLimit", "tiktokUsername"], (data) => {
-          handleRandomLiked(data.targetLimit || 100, data.tiktokUsername || "");
-        });
-      }
+      triggerTiered403Recovery(
+        `Watchdog error state: "${tab.title}"`,
+        tab.id,
+      );
       return;
     }
 
@@ -517,27 +590,21 @@ setInterval(async () => {
       const navTime = tabNavTimestamps[tab.id] || 0;
       const elapsed = now - navTime;
 
-      if (elapsed > 3000) {
+      // Ping tab after 4.5s navigation delay
+      if (elapsed > 4500) {
         chrome.tabs.sendMessage(tab.id, { action: "ping" }, (response) => {
           if (chrome.runtime.lastError || !response || !response.alive) {
-            if (now - last403TriggerTime > 3000) {
-              last403TriggerTime = now;
-              console.warn(
-                `[BG Watchdog] Video tab ping failed after ${elapsed}ms ("${tab.url}"). Tab is stuck on 403/chrome-error. Auto-skipping...`,
+            setTimeout(() => {
+              triggerTiered403Recovery(
+                `Watchdog ping failed (${elapsed}ms)`,
+                tab.id,
               );
-              chrome.storage.local.get(
-                ["targetLimit", "tiktokUsername"],
-                (data) => {
-                  handleRandomLiked(
-                    data.targetLimit || 100,
-                    data.tiktokUsername || "",
-                  );
-                },
-              );
-            }
+            }, 1800);
+          } else {
+            resetErrorFreeWindow();
           }
         });
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 }, 3000);

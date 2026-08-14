@@ -93,6 +93,14 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     sendResponse({ success: true });
     return true;
   }
+
+  if (request.action === "showWarningToast") {
+    if (typeof showToast === "function") {
+      showToast(request.message || "⚠️ Cảnh báo", "warning");
+    }
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
 // Auto-init based on current page type

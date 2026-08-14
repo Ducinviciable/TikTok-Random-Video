@@ -1,5 +1,33 @@
 // Layer 6: Force Video Playback + "Please Wait" / 403 Recovery
 
+var EARLY_SKIP_CHANCE = 0.10; // 10% probability of low interest
+var EARLY_SKIP_MIN_RATIO = 0.30; // Skip between 30%
+var EARLY_SKIP_MAX_RATIO = 0.80; // and 80% of duration
+var preloadAttempted = false;
+var isLowInterestVideo = false;
+var earlySkipTargetRatio = 0;
+var earlySkipTriggered = false;
+
+function warmUpNextVideoUrl(nextUrl) {
+  if (!nextUrl || typeof nextUrl !== "string" || !nextUrl.startsWith("http"))
+    return;
+
+  try {
+    fetch(nextUrl, { method: "HEAD", mode: "no-cors" }).catch(function () { });
+  } catch (e) { }
+
+  try {
+    var oldLink = document.getElementById("tk-random-preload-link");
+    if (oldLink) oldLink.remove();
+
+    var link = document.createElement("link");
+    link.id = "tk-random-preload-link";
+    link.rel = "prefetch";
+    link.href = nextUrl;
+    document.head.appendChild(link);
+  } catch (e) { }
+}
+
 (function initPlaybackRecovery() {
   console.log("[CS] Layer 6 Playback & Error Recovery initialized.");
   var recoveryAttempts = 0;
@@ -68,8 +96,8 @@
         var elapsedSec = ((Date.now() - pleaseWaitStartTime) / 1000).toFixed(1);
         console.log(
           "[CS] ✅ Màn hình 'Please wait' biến mất sau: " +
-            elapsedSec +
-            " giây.",
+          elapsedSec +
+          " giây.",
         );
         pleaseWaitStartTime = null;
       }
@@ -131,22 +159,72 @@
         // Try clicking any dismiss/close/retry buttons
         var dismissBtns = document.querySelectorAll(
           'button[class*="close"], button[class*="dismiss"], [class*="close-btn"], ' +
-            'button[class*="retry"], [data-e2e*="close"]',
+          'button[class*="retry"], [data-e2e*="close"]',
         );
         for (var j = 0; j < dismissBtns.length; j++) {
-          dismissBtns[j].click();
+          try {
+            dismissBtns[j].click();
+          } catch (e) { }
         }
 
-        // Soft SPA re-navigation after 12s of "Please Wait" without hard tab reload
+        // Multi-Phase Soft Recovery: Require Please Wait to persist > 12s
         if (pleaseWaitStartTime && now - pleaseWaitStartTime > 12000) {
           console.warn(
-            "[CS] ⚠️ 'Please Wait' kéo dài quá 12s → Chuyển video mềm qua SPA",
+            "[CS] ⚠️ 'Please Wait' kéo dài > 12s → Kích hoạt chuỗi phục hồi mềm (Phase A-D)...",
           );
           showToast(
-            "⚠️ Vui lòng chờ kéo dài → Đang chuyển video tiếp...",
+            "⚠️ Vui lòng chờ kéo dài → Đang thử tự phục hồi...",
             "warning",
           );
-          requestNextVideo();
+
+          // Phase A: Micro-scrolls (±50px)
+          try {
+            window.scrollBy({ top: -50, behavior: "smooth" });
+            setTimeout(function () {
+              window.scrollBy({ top: 50, behavior: "smooth" });
+            }, 300);
+          } catch (e) { }
+
+          // Phase B: Fake focus/visibility flash
+          try {
+            window.dispatchEvent(new Event("focus"));
+            document.dispatchEvent(new FocusEvent("focus"));
+          } catch (e) { }
+
+          // Phase C & D: Wait 5s grace time; if still blocked -> soft SPA navigation
+          setTimeout(function () {
+            var overlaysStillPresent = document.querySelectorAll(
+              '[class*="modal"], [class*="overlay"], [class*="error"], [class*="captcha"], [class*="DivErrorContainer"]',
+            );
+            var stillBlocked = false;
+            for (var k = 0; k < overlaysStillPresent.length; k++) {
+              var t = overlaysStillPresent[k].textContent.toLowerCase();
+              if (
+                t.includes("please wait") ||
+                t.includes("vui lòng chờ") ||
+                t.includes("try again") ||
+                t.includes("thử lại")
+              ) {
+                stillBlocked = true;
+                break;
+              }
+            }
+
+            if (stillBlocked) {
+              console.warn(
+                "[CS] ⚠️ Vẫn bị chặn sau Phase A-C → Chuyển video mềm qua SPA",
+              );
+              showToast(
+                "⚠️ Vẫn bị chặn → Đang chuyển video tiếp...",
+                "warning",
+              );
+              requestNextVideo();
+            } else {
+              console.log(
+                "[CS] ✅ Phục hồi mềm thành công! Màn hình Please Wait đã tự giải phóng.",
+              );
+            }
+          }, 5000);
         }
       } else if (errorType === "403" || errorType === "video_error") {
         if (typeof triggerHumanMouseNudge === "function") {
@@ -161,7 +239,7 @@
         );
         try {
           chrome.runtime.sendMessage({ action: "handle403Detected" });
-        } catch (e) {}
+        } catch (e) { }
       }
     }
 
@@ -207,9 +285,9 @@ function startStuckMonitor() {
         }
         console.warn(
           "[CS] ⚠️ Video bị đứng (" +
-            stuckSeconds +
-            "s) - currentTime: " +
-            currentTime.toFixed(2),
+          stuckSeconds +
+          "s) - currentTime: " +
+          currentTime.toFixed(2),
         );
         // Soft recovery at 5s: try load() + play() before giving up
         if (stuckSeconds === 5) {
@@ -223,12 +301,12 @@ function startStuckMonitor() {
           try {
             video.load();
             video.currentTime = 0.05;
-          } catch (e) {}
+          } catch (e) { }
           var p = video.play();
           if (p && p.then) {
             p.then(function () {
               logPlaybackDiagnostics("PLAY_RESOLVED", video);
-            }).catch(function () {});
+            }).catch(function () { });
           }
         }
         // Hard skip at 6s
@@ -316,8 +394,6 @@ function checkVideoAudioAndShop() {
   }
 }
 
-// VIDEO WATCHER — Auto-next playback engine
-// Find the largest visible video element on the page
 function watchForVideoElement() {
   const videos = document.querySelectorAll("video");
   if (videos.length === 0) return;
@@ -355,6 +431,17 @@ function watchForVideoElement() {
   playNextRequested = false;
   timeUpdateTriggered = false;
   lastTimeForLoop = -1;
+  preloadAttempted = false;
+  earlySkipTriggered = false;
+  isLowInterestVideo = Math.random() < EARLY_SKIP_CHANCE;
+  if (isLowInterestVideo) {
+    earlySkipTargetRatio =
+      EARLY_SKIP_MIN_RATIO +
+      Math.random() * (EARLY_SKIP_MAX_RATIO - EARLY_SKIP_MIN_RATIO);
+  } else {
+    earlySkipTargetRatio = 0;
+  }
+
   console.log("[CS] Chuyển sang video mới");
 
   // Force aggressive buffering + immediate playback attempt
@@ -363,7 +450,7 @@ function watchForVideoElement() {
   currentVideoElement.load();
   try {
     currentVideoElement.currentTime = 0.05;
-  } catch (e) {}
+  } catch (e) { }
 
   logPlaybackDiagnostics("VIDEO_FOUND", currentVideoElement);
   logPlaybackDiagnostics("AGGRESSIVE_PLAY", currentVideoElement);
@@ -407,10 +494,10 @@ function watchForVideoElement() {
       console.log("[CS] ⚡ waiting event → bump currentTime + play()");
       try {
         currentVideoElement.currentTime += 0.01;
-      } catch (e) {}
+      } catch (e) { }
       var p = currentVideoElement.play();
       if (p && p.then) {
-        p.catch(function () {});
+        p.catch(function () { });
       }
     }
   });
@@ -434,7 +521,7 @@ function watchForVideoElement() {
         ) {
           var p = currentVideoElement.play();
           if (p && p.then) {
-            p.catch(function () {});
+            p.catch(function () { });
           }
         }
       }, 300);
@@ -501,16 +588,74 @@ function onVideoTimeUpdate() {
 
   var remaining = video.duration - video.currentTime;
 
-  // Method 1: Remaining time check (primary)
+  if (
+    isLowInterestVideo &&
+    !earlySkipTriggered &&
+    !playNextRequested &&
+    video.duration >= 4 &&
+    video.currentTime / video.duration >= earlySkipTargetRatio
+  ) {
+    earlySkipTriggered = true;
+    playNextRequested = true;
+
+    console.log(
+      "[CS] ⏭️ Interest Simulation: Early skipping low-interest video at " +
+      ((video.currentTime / video.duration) * 100).toFixed(0) +
+      "% (" +
+      video.currentTime.toFixed(1) +
+      "s / " +
+      video.duration.toFixed(1) +
+      "s)",
+    );
+
+    if (typeof triggerHumanMouseNudge === "function") {
+      triggerHumanMouseNudge("video_transition");
+    }
+
+    if (loopObserver) {
+      loopObserver.disconnect();
+      loopObserver = null;
+    }
+    video.removeAttribute("loop");
+    video.pause();
+
+    requestNextVideo();
+    lastTimeForLoop = -1;
+    return;
+  }
+
+  if (
+    !preloadAttempted &&
+    video.duration >= 3 &&
+    video.currentTime / video.duration >= 0.70
+  ) {
+    preloadAttempted = true;
+    try {
+      chrome.runtime.sendMessage(
+        { action: "peekNextVideo", currentUrl: window.location.href },
+        function (res) {
+          if (chrome.runtime.lastError) return;
+          if (res && res.url) {
+            console.log(
+              "[CS] 🚀 Smart Preload: Pre-warming next video resource (~70% mark): " +
+              res.url,
+            );
+            warmUpNextVideoUrl(res.url);
+          }
+        },
+      );
+    } catch (e) { }
+  }
+
+  // Method 1: Remaining time check 
   if (remaining < 0.5 && remaining >= 0) {
     playNextRequested = true;
 
-    // Trigger contextual human mouse nudge right as video finishes
+
     if (typeof triggerHumanMouseNudge === "function") {
       triggerHumanMouseNudge("video_end");
     }
 
-    // Remove loop and pause to prevent loop-restart during navigation delay
     if (loopObserver) {
       loopObserver.disconnect();
       loopObserver = null;
@@ -520,16 +665,15 @@ function onVideoTimeUpdate() {
 
     console.log(
       "[CS] Video gần hết (" +
-        remaining.toFixed(2) +
-        "s còn lại) → Tạm dừng & chuyển video",
+      remaining.toFixed(2) +
+      "s còn lại) → Tạm dừng & chuyển video",
     );
     requestNextVideo();
     lastTimeForLoop = -1;
     return;
   }
 
-  // Method 2: Loop-reset detection (safety net, inspired by reels-cycler)
-  // Detects when video was near end but suddenly jumped back to start (loop wrapped)
+  // Method 2: Loop-reset detection
   if (
     lastTimeForLoop > 0 &&
     video.duration > 0.5 &&
@@ -538,10 +682,10 @@ function onVideoTimeUpdate() {
   ) {
     console.log(
       "[CS] 🔄 Loop-reset detected (was " +
-        lastTimeForLoop.toFixed(2) +
-        "s → now " +
-        video.currentTime.toFixed(2) +
-        "s) → Chuyển video",
+      lastTimeForLoop.toFixed(2) +
+      "s → now " +
+      video.currentTime.toFixed(2) +
+      "s) → Chuyển video",
     );
     playNextRequested = true;
 
@@ -573,8 +717,8 @@ function requestNextVideo() {
     var remainingDelay = 2000 - timeSinceLastSkip;
     console.log(
       "[CS] ⏳ Throttle: Chờ " +
-        remainingDelay +
-        "ms trước khi chuyển video tiếp...",
+      remainingDelay +
+      "ms trước khi chuyển video tiếp...",
     );
     setTimeout(requestNextVideo, remainingDelay);
     return;

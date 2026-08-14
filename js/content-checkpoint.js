@@ -36,6 +36,11 @@ function performDomCleanup() {
           prunedNodeCount +
           ")",
       );
+      if (removeCount > 0 && typeof saveCheckpointData === "function") {
+        saveCheckpointData(
+          typeof isDeepAppend !== "undefined" ? isDeepAppend : false,
+        );
+      }
     }
   } catch (e) {}
 }
