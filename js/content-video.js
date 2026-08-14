@@ -8,6 +8,7 @@
 
   setInterval(function () {
     if (!window.location.href.includes("/video/")) return;
+    if (playNextRequested) return;
 
     var videos = document.querySelectorAll("video");
     for (var i = 0; i < videos.length; i++) {
@@ -27,7 +28,7 @@
         })(v);
       }
     }
-  }, 2000);
+  }, 1500);
 
   var lastRecoveryTimestamp = 0;
 
@@ -124,6 +125,9 @@
       );
 
       if (errorType === "please_wait") {
+        if (typeof triggerHumanMouseNudge === "function") {
+          triggerHumanMouseNudge("please_wait");
+        }
         // Try clicking any dismiss/close/retry buttons
         var dismissBtns = document.querySelectorAll(
           'button[class*="close"], button[class*="dismiss"], [class*="close-btn"], ' +
@@ -145,6 +149,9 @@
           requestNextVideo();
         }
       } else if (errorType === "403" || errorType === "video_error") {
+        if (typeof triggerHumanMouseNudge === "function") {
+          triggerHumanMouseNudge("blank_screen");
+        }
         console.warn(
           "[CS] Layer 6: Detected 403 / Access Denied / Blank Page! Triggering Random Liked Video...",
         );
@@ -172,7 +179,7 @@
   // NOTE: Cookie clearing removed — deleting _abck/bm_ Akamai tokens causes 403 errors
 })();
 
-// MONITOR 1: Stuck / Frozen Video Monitor (8-second freeze check)
+// MONITOR 1: Stuck / Frozen Video Monitor (6-second freeze check)
 let lastVideoTime = -1;
 let stuckSeconds = 0;
 let stuckInterval = null;
@@ -195,7 +202,7 @@ function startStuckMonitor() {
         !video.paused
       ) {
         stuckSeconds++;
-        if (stuckSeconds === 5) {
+        if (stuckSeconds === 4) {
           logPlaybackDiagnostics("STUCK", video);
         }
         console.warn(
@@ -204,11 +211,32 @@ function startStuckMonitor() {
             "s) - currentTime: " +
             currentTime.toFixed(2),
         );
-        if (stuckSeconds >= 8) {
+        // Soft recovery at 5s: try load() + play() before giving up
+        if (stuckSeconds === 5) {
           console.warn(
-            "[CS] ⚠️ Video bị đứng quá 8s! Tự động chuyển video tiếp...",
+            "[CS] ⚠️ Video đứng 5s → Thử soft recovery (load + play)...",
           );
-          showToast("⚠️ Video bị đứng quá 8s → Tự chuyển video", "warning");
+          logPlaybackDiagnostics("STUCK_SOFT_RECOVERY", video);
+          if (typeof triggerHumanMouseNudge === "function") {
+            triggerHumanMouseNudge("recovery");
+          }
+          try {
+            video.load();
+            video.currentTime = 0.05;
+          } catch (e) {}
+          var p = video.play();
+          if (p && p.then) {
+            p.then(function () {
+              logPlaybackDiagnostics("PLAY_RESOLVED", video);
+            }).catch(function () {});
+          }
+        }
+        // Hard skip at 6s
+        if (stuckSeconds >= 6) {
+          console.warn(
+            "[CS] ⚠️ Video bị đứng quá 6s! Tự động chuyển video tiếp...",
+          );
+          showToast("⚠️ Video bị đứng quá 6s → Tự chuyển video", "warning");
           clearInterval(stuckInterval);
           requestNextVideo();
           return;
@@ -326,13 +354,30 @@ function watchForVideoElement() {
   currentVideoElement = targetVideo;
   playNextRequested = false;
   timeUpdateTriggered = false;
+  lastTimeForLoop = -1;
   console.log("[CS] Chuyển sang video mới");
 
-  // Force aggressive buffering even in background tabs
+  // Force aggressive buffering + immediate playback attempt
   currentVideoElement.setAttribute("preload", "auto");
   currentVideoElement.setAttribute("playsinline", "");
+  currentVideoElement.load();
+  try {
+    currentVideoElement.currentTime = 0.05;
+  } catch (e) {}
 
   logPlaybackDiagnostics("VIDEO_FOUND", currentVideoElement);
+  logPlaybackDiagnostics("AGGRESSIVE_PLAY", currentVideoElement);
+  var pInit = currentVideoElement.play();
+  if (pInit && pInit.then) {
+    pInit
+      .then(function () {
+        logPlaybackDiagnostics("PLAY_RESOLVED", currentVideoElement);
+      })
+      .catch(function (err) {
+        console.warn("[CS] Autoplay rejected on new video:", err);
+        logPlaybackDiagnostics("PLAY_REJECTED", currentVideoElement);
+      });
+  }
 
   var diagEvents = [
     "loadstart",
@@ -359,7 +404,10 @@ function watchForVideoElement() {
       currentVideoElement &&
       !currentVideoElement.ended
     ) {
-      console.log("[CS] ⚡ waiting event → forcing play() to resume");
+      console.log("[CS] ⚡ waiting event → bump currentTime + play()");
+      try {
+        currentVideoElement.currentTime += 0.01;
+      } catch (e) {}
       var p = currentVideoElement.play();
       if (p && p.then) {
         p.catch(function () {});
@@ -389,11 +437,11 @@ function watchForVideoElement() {
             p.catch(function () {});
           }
         }
-      }, 500);
+      }, 300);
     }
   });
 
-  // Start 8-second stuck monitor and check audio/shop after video loads
+  // Start 6-second stuck monitor and check audio/shop after video loads
   startStuckMonitor();
   setTimeout(checkVideoAudioAndShop, 2500);
 
@@ -428,9 +476,15 @@ function watchForVideoElement() {
 function onVideoEnded() {
   if (playNextRequested) return;
   console.log("[CS] Video đã kết thúc (ended event) → Gửi yêu cầu playNext");
+  if (typeof triggerHumanMouseNudge === "function") {
+    triggerHumanMouseNudge("video_end");
+  }
   timeUpdateTriggered = false;
   requestNextVideo();
 }
+
+// Track last currentTime for loop-reset detection (inspired by reels-cycler)
+var lastTimeForLoop = -1;
 
 // PRIMARY end-of-video detection — fires while loop is on
 function onVideoTimeUpdate() {
@@ -447,8 +501,14 @@ function onVideoTimeUpdate() {
 
   var remaining = video.duration - video.currentTime;
 
+  // Method 1: Remaining time check (primary)
   if (remaining < 0.5 && remaining >= 0) {
     playNextRequested = true;
+
+    // Trigger contextual human mouse nudge right as video finishes
+    if (typeof triggerHumanMouseNudge === "function") {
+      triggerHumanMouseNudge("video_end");
+    }
 
     // Remove loop and pause to prevent loop-restart during navigation delay
     if (loopObserver) {
@@ -464,7 +524,44 @@ function onVideoTimeUpdate() {
         "s còn lại) → Tạm dừng & chuyển video",
     );
     requestNextVideo();
+    lastTimeForLoop = -1;
+    return;
   }
+
+  // Method 2: Loop-reset detection (safety net, inspired by reels-cycler)
+  // Detects when video was near end but suddenly jumped back to start (loop wrapped)
+  if (
+    lastTimeForLoop > 0 &&
+    video.duration > 0.5 &&
+    lastTimeForLoop > video.duration - 0.6 &&
+    video.currentTime < 0.4
+  ) {
+    console.log(
+      "[CS] 🔄 Loop-reset detected (was " +
+        lastTimeForLoop.toFixed(2) +
+        "s → now " +
+        video.currentTime.toFixed(2) +
+        "s) → Chuyển video",
+    );
+    playNextRequested = true;
+
+    if (typeof triggerHumanMouseNudge === "function") {
+      triggerHumanMouseNudge("video_transition");
+    }
+
+    if (loopObserver) {
+      loopObserver.disconnect();
+      loopObserver = null;
+    }
+    video.removeAttribute("loop");
+    video.pause();
+
+    requestNextVideo();
+    lastTimeForLoop = -1;
+    return;
+  }
+
+  lastTimeForLoop = video.currentTime;
 }
 
 var lastSkipTimestamp = 0;
