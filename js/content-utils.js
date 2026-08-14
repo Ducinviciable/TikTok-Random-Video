@@ -42,7 +42,7 @@ function extractImgUrl(img) {
 }
 
 // Scrape liked video links + thumbnails from current page DOM
-function collectVideoUrls() {
+function collectVideoUrls(skipThumbs) {
     let found = 0;
     const likedContainer = document.querySelector(TK_SELECTORS.LIKED_CONTAINER);
 
@@ -50,10 +50,12 @@ function collectVideoUrls() {
         const url = a.href.split("?")[0];
         if (!url || (blacklistedSet && blacklistedSet.has(url))) return;
 
-        let img = a.querySelector("img");
-        if (!img && imgOwner) img = imgOwner.querySelector("img");
-
-        const thumb = extractImgUrl(img);
+        let thumb = "";
+        if (!skipThumbs) {
+            let img = a.querySelector("img");
+            if (!img && imgOwner) img = imgOwner.querySelector("img");
+            thumb = extractImgUrl(img);
+        }
 
         if (!collectedMap.has(url)) {
             collectedMap.set(url, thumb);
@@ -62,11 +64,13 @@ function collectVideoUrls() {
             collectedMap.set(url, thumb);
         }
 
-        // Track missing thumbnails for Retry Queue & Adaptive Delay
-        if (!thumb || thumb === "") {
-            missingThumbQueue.add(url);
-        } else {
-            missingThumbQueue.delete(url);
+        // Track missing thumbnails for Retry Queue & Adaptive Delay (only when harvesting thumbnails)
+        if (!skipThumbs) {
+            if (!thumb || thumb === "") {
+                missingThumbQueue.add(url);
+            } else {
+                missingThumbQueue.delete(url);
+            }
         }
     }
 

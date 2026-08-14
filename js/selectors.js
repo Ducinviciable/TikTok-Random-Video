@@ -50,6 +50,7 @@ var loopObserver = null;
 
 // High-capacity collection & checkpoint state variables
 var isDeepAppend = false;
+var isCatchingUp = false;
 var missingThumbQueue = new Set();
 var activeDomNodes = [];
 var prunedNodeCount = 0;

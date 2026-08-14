@@ -13,7 +13,7 @@ function startObserving(appendMode) {
       }
     }
     if (hasNewNodes) {
-      collectVideoUrls();
+      collectVideoUrls(isCatchingUp);
       sendVideosToBackground(appendMode);
       if (videoWatcherActive) {
         watchForVideoElement();
@@ -24,13 +24,33 @@ function startObserving(appendMode) {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-function autoScroll(targetLimit, baseInterval, existingUrlsSet, smartStopMode) {
+function autoScroll(
+  targetLimit,
+  baseInterval,
+  existingUrlsSet,
+  smartStopMode,
+  appendMode,
+) {
   targetLimit = targetLimit || 100;
   baseInterval = baseInterval || 1000;
   existingUrlsSet = existingUrlsSet || new Set();
   smartStopMode = smartStopMode || false;
 
-  const maxScrolls = Math.ceil(targetLimit / 10) + 15;
+  const existingCount = existingUrlsSet ? existingUrlsSet.size : 0;
+  const maxScrolls = Math.ceil((existingCount + targetLimit) / 10) + 15;
+
+  isCatchingUp =
+    (isDeepAppend || appendMode) && existingCount > 0 && !smartStopMode;
+
+  if (isCatchingUp) {
+    console.log(
+      "[CS] 🏃 Entering Catch-Up Phase: Fast-scrolling past " +
+        existingCount +
+        " known videos (scroll budget: " +
+        maxScrolls +
+        ")...",
+    );
+  }
 
   return new Promise(function (resolve) {
     let scrollCount = 0;
@@ -55,11 +75,43 @@ function autoScroll(targetLimit, baseInterval, existingUrlsSet, smartStopMode) {
     async function scrollStep() {
       if (!isCollecting) {
         if (checkpointTimer) clearInterval(checkpointTimer);
+        isCatchingUp = false;
         resolve(collectedMap.size);
         return;
       }
 
-      collectVideoUrls();
+      // Fast Catch-Up mode: skip heavy thumbnail parsing while in known territory
+      collectVideoUrls(isCatchingUp);
+
+      const newCollectedCount = collectedMap.size - existingUrlsSet.size;
+
+      if (isCatchingUp) {
+        if (newCollectedCount > 0) {
+          isCatchingUp = false;
+          noNewCount = 0;
+          console.log(
+            "[CS] 🚀 Exited Catch-Up Phase! First new video URL encountered (Total: " +
+              collectedMap.size +
+              ", New: " +
+              newCollectedCount +
+              "). Restoring normal collection pace & full thumbnail extraction.",
+          );
+          // Immediately perform full extraction with thumbnails enabled
+          collectVideoUrls(false);
+        } else if (scrollCount > 0 && scrollCount % 10 === 0) {
+          console.log(
+            "[CS] 🏃 Catch-Up Phase: Still in known territory (" +
+              collectedMap.size +
+              "/" +
+              existingCount +
+              " seen, scroll " +
+              scrollCount +
+              "/" +
+              maxScrolls +
+              ")...",
+          );
+        }
+      }
 
       if (smartStopMode) {
         const visibleUrls = getVisibleUrls();
@@ -81,29 +133,35 @@ function autoScroll(targetLimit, baseInterval, existingUrlsSet, smartStopMode) {
             "[CS] ⚡ Smart Stop: Detected 3 consecutive existing videos → Finishing Quick Update!",
           );
           if (checkpointTimer) clearInterval(checkpointTimer);
+          isCatchingUp = false;
           resolve(collectedMap.size);
           return;
         }
       }
 
       let currentStatus = "collecting";
+      if (isCatchingUp) {
+        currentStatus = "catchup";
+      } else if (missingThumbQueue.size > 5) {
+        currentStatus = "slow_network";
+      }
 
       let extraDelay = 0;
-      if (missingThumbQueue.size > 5) {
-        currentStatus = "slow_network";
-        extraDelay += 600;
+      if (!isCatchingUp) {
+        if (missingThumbQueue.size > 5) {
+          extraDelay += 600;
+        }
+
+        const totalCollected = collectedMap.size;
+        if (totalCollected > 2500) {
+          extraDelay += 1500;
+        } else if (totalCollected > 1500) {
+          extraDelay += 800;
+        } else if (totalCollected > 800) {
+          extraDelay += 400;
+        }
       }
 
-      const totalCollected = collectedMap.size;
-      if (totalCollected > 2500) {
-        extraDelay += 1500;
-      } else if (totalCollected > 1500) {
-        extraDelay += 800;
-      } else if (totalCollected > 800) {
-        extraDelay += 400;
-      }
-
-      const newCollectedCount = collectedMap.size - existingUrlsSet.size;
       try {
         chrome.runtime.sendMessage(
           {
@@ -112,10 +170,10 @@ function autoScroll(targetLimit, baseInterval, existingUrlsSet, smartStopMode) {
             scrollCount: scrollCount + 1,
             maxScrolls: maxScrolls,
             count: collectedMap.size,
-            newCount: newCollectedCount,
+            newCount: Math.max(0, newCollectedCount),
             limit: targetLimit,
             status: currentStatus,
-            missingThumbs: missingThumbQueue.size,
+            missingThumbs: isCatchingUp ? 0 : missingThumbQueue.size,
           },
           function () {
             if (chrome.runtime.lastError) {
@@ -132,9 +190,10 @@ function autoScroll(targetLimit, baseInterval, existingUrlsSet, smartStopMode) {
       if (
         newCollectedCount >= targetLimit ||
         scrollCount >= maxScrolls ||
-        noNewCount >= 4
+        (!isCatchingUp && noNewCount >= 4)
       ) {
         if (checkpointTimer) clearInterval(checkpointTimer);
+        isCatchingUp = false;
         resolve(collectedMap.size);
         return;
       }
@@ -158,7 +217,11 @@ function autoScroll(targetLimit, baseInterval, existingUrlsSet, smartStopMode) {
       lastScrollHeight = containerHeight;
 
       if (sameHeightCount >= 5) {
+        console.log(
+          "[CS] 🛑 Reached end of scrollable page (sameHeightCount >= 5). Finishing collection.",
+        );
         if (checkpointTimer) clearInterval(checkpointTimer);
+        isCatchingUp = false;
         resolve(collectedMap.size);
         return;
       }
@@ -166,21 +229,32 @@ function autoScroll(targetLimit, baseInterval, existingUrlsSet, smartStopMode) {
       scrollCount++;
       itemsSinceLastRest++;
 
-      if (collectedMap.size === lastCount) {
-        noNewCount++;
+      if (isCatchingUp) {
+        noNewCount = 0; // State-aware Freeze in known territory
       } else {
-        noNewCount = 0;
+        if (collectedMap.size === lastCount) {
+          noNewCount++;
+        } else {
+          noNewCount = 0;
+        }
       }
       lastCount = collectedMap.size;
 
-      let nextDelay =
-        baseInterval + extraDelay + Math.floor(Math.random() * 250);
-      if (itemsSinceLastRest >= 100) {
-        itemsSinceLastRest = 0;
-        nextDelay += 2500;
-        console.log(
-          "[CS] 🧊 DOM Rest: Pausing 2.5s to let CPU & RAM cool down...",
-        );
+      let nextDelay;
+      if (isCatchingUp) {
+        // Fast Catch-Up mode: 300–500 ms randomized
+        nextDelay = Math.floor(Math.random() * 200) + 300;
+      } else {
+        // Normal humanized mode: 700–1300 ms + adaptive extras
+        nextDelay =
+          baseInterval + extraDelay + Math.floor(Math.random() * 250);
+        if (itemsSinceLastRest >= 100) {
+          itemsSinceLastRest = 0;
+          nextDelay += 2500;
+          console.log(
+            "[CS] 🧊 DOM Rest: Pausing 2.5s to let CPU & RAM cool down...",
+          );
+        }
       }
 
       setTimeout(scrollStep, nextDelay);
@@ -253,89 +327,105 @@ function startCollection(
   smartStopMode = smartStopMode || false;
   isDeepAppend = !smartStopMode && appendMode;
 
-  const maxScrolls = Math.ceil(targetLimit / 10) + 15;
-
-  try {
-    chrome.runtime.sendMessage(
-      {
-        action: "collectionProgress",
-        isCollecting: true,
-        scrollCount: 0,
-        maxScrolls: maxScrolls,
-        count: collectedMap.size,
-        newCount: 0,
-        limit: targetLimit,
-        status: "idle",
-      },
-      function () {
-        if (chrome.runtime.lastError) {
-        }
-      },
-    );
-  } catch (e) {}
-
   if (!continueFromCurrent) {
     existingUrls.clear();
   }
 
   const proceed = function () {
+    const existingCount = existingUrls.size;
+    const maxScrolls = Math.ceil((existingCount + targetLimit) / 10) + 15;
+    isCatchingUp =
+      !smartStopMode && (appendMode || isDeepAppend) && existingCount > 0;
+
+    try {
+      chrome.runtime.sendMessage(
+        {
+          action: "collectionProgress",
+          isCollecting: true,
+          scrollCount: 0,
+          maxScrolls: maxScrolls,
+          count: collectedMap.size,
+          newCount: 0,
+          limit: targetLimit,
+          status: isCatchingUp ? "catchup" : "idle",
+        },
+        function () {
+          if (chrome.runtime.lastError) {
+          }
+        },
+      );
+    } catch (e) {}
+
     chrome.storage.local.get(["blacklistedVideos"], function (bData) {
       if (bData && bData.blacklistedVideos) {
         blacklistedSet = new Set(bData.blacklistedVideos);
       }
-      collectVideoUrls();
+      collectVideoUrls(isCatchingUp);
       startObserving(appendMode);
 
-      autoScroll(targetLimit, 1000, existingUrls, smartStopMode).then(
-        async function () {
-          // Final Sweep before completion
-          await performFinalSweep();
+      autoScroll(
+        targetLimit,
+        1000,
+        existingUrls,
+        smartStopMode,
+        appendMode,
+      ).then(async function () {
+        // Final Sweep before completion
+        await performFinalSweep();
 
-          sendVideosToBackground(appendMode);
+        sendVideosToBackground(appendMode);
 
-          // Clear checkpoint upon successful completion
-          try {
-            chrome.runtime.sendMessage({ action: "clearCheckpoint" });
-          } catch (e) {}
+        // Clear checkpoint upon successful completion
+        try {
+          chrome.runtime.sendMessage({ action: "clearCheckpoint" });
+        } catch (e) {}
 
-          const newCollectedCount = collectedMap.size - existingUrls.size;
+        const newCollectedCount = collectedMap.size - existingUrls.size;
+        console.log(
+          "[CS] 🏁 Collection finished: total=" +
+            collectedMap.size +
+            ", new=" +
+            newCollectedCount +
+            ", targetLimit=" +
+            targetLimit,
+        );
 
-          try {
-            chrome.runtime.sendMessage(
-              {
-                action: "collectionProgress",
-                isCollecting: false,
-                scrollCount: maxScrolls,
-                maxScrolls: maxScrolls,
-                count: collectedMap.size,
-                newCount: newCollectedCount,
-                limit: targetLimit,
-                status: "complete",
-              },
-              function () {
-                if (chrome.runtime.lastError) {
-                }
-              },
-            );
-          } catch (e) {}
+        try {
+          chrome.runtime.sendMessage(
+            {
+              action: "collectionProgress",
+              isCollecting: false,
+              scrollCount: maxScrolls,
+              maxScrolls: maxScrolls,
+              count: collectedMap.size,
+              newCount: newCollectedCount,
+              limit: targetLimit,
+              status: "complete",
+            },
+            function () {
+              if (chrome.runtime.lastError) {
+              }
+            },
+          );
+        } catch (e) {}
 
-          isCollecting = false;
+        isCollecting = false;
+        isCatchingUp = false;
 
-          if (autoPlay && collectedMap.size > 0) {
-            setTimeout(function () {
-              try {
-                chrome.runtime.sendMessage(
-                  { action: "collectAndPlay" },
-                  function () {
-                    if (chrome.runtime.lastError) {
-                    }
-                  },
-                );
-              } catch (e) {}
-            }, 500);
-          }
-        },
-      );
+        if (autoPlay && collectedMap.size > 0) {
+          setTimeout(function () {
+            try {
+              chrome.runtime.sendMessage(
+                { action: "collectAndPlay" },
+                function () {
+                  if (chrome.runtime.lastError) {
+                  }
+                },
+              );
+            } catch (e) {}
+          }, 500);
+        }
+      });
     });
   };
 
@@ -376,3 +466,4 @@ function startCollection(
     proceed();
   }
 }
+
