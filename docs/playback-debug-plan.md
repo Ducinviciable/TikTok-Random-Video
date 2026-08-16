@@ -1,28 +1,28 @@
-# Diagnostic Logging Plan for Background Tab Playback Stalls
+# Kế hoạch Ghi nhận Nhật ký Chẩn đoán Lỗi Treo phát Video trong Tab Chạy nền
 
-This document provides a technical diagnostic plan to identify why a randomly opened TikTok video occasionally stalls in a background tab until the user manually focuses/activates the tab.
-
----
-
-## 1. Problem Analysis & Diagnostic Goals
-
-When Chrome or Edge navigates to a new TikTok video in a background (non-focused) tab:
-1. **Browser Resource Throttling**: Chromium aggressively throttles timers (`setInterval` / `setTimeout` delayed to 1000ms+), suspends media decoding, and delays audio context initialization in background tabs.
-2. **TikTok Web Player Background Policy**: TikTok's web player script checks `document.hidden`, `document.visibilityState`, and `document.hasFocus()`. If false, TikTok pauses or delays buffering media streams.
-3. **Media Pipeline Ready State**: The HTML5 `<video>` element may remain stuck at `readyState = 1` (`HAVE_METADATA`) or `readyState = 2` (`HAVE_CURRENT_DATA`) until tab focus occurs.
-
-### Diagnostic Objectives
-By injecting structured telemetry logs at critical execution checkpoints, we can determine:
-- Whether the video element is found but stuck in `paused = true`.
-- Whether network buffering halts (`networkState = 2` or `3`, `buffered = []`).
-- Whether Chromium background throttling is preventing Layer 6 `v.play()` calls or `setInterval` execution.
-- Whether `document.visibilityState` / `hasFocus()` overrides are successfully active at the moment of failure.
+Tài liệu này cung cấp kế hoạch chẩn đoán kỹ thuật nhằm xác định lý do tại sao một video TikTok được mở ngẫu nhiên đôi khi bị kẹt (stalls/freezes) trong một tab chạy nền (tab không được chọn) cho đến khi người dùng chủ động focus/kích hoạt tab đó theo cách thủ công.
 
 ---
 
-## 2. Standardized Diagnostic Logging Helper
+## 1. Phân tích vấn đề & Mục tiêu Chẩn đoán
 
-To ensure consistency across all logging points, use the following helper function:
+Khi Chrome hoặc Edge điều hướng đến một video TikTok mới trong một tab chạy nền (không được focus):
+1.  **Browser Resource Throttling (Giới hạn tài nguyên trình duyệt)**: Chromium chủ động hạn chế các bộ hẹn giờ (`setInterval` / `setTimeout` bị trễ đến hơn 1000ms), tạm dừng giải mã đa phương tiện (media decoding), và làm chậm quá trình khởi tạo audio context đối với các tab chạy nền.
+2.  **Chính sách chạy nền của TikTok Web Player**: Script trình phát web của TikTok thực hiện kiểm tra `document.hidden`, `document.visibilityState`, và `document.hasFocus()`. Nếu các thuộc tính này trả về false, TikTok sẽ tạm dừng hoặc trì hoãn việc tải bộ đệm luồng dữ liệu video (buffering media streams).
+3.  **Trạng thái sẵn sàng của Media Pipeline**: Thẻ HTML5 `<video>` có thể bị kẹt ở trạng thái `readyState = 1` (`HAVE_METADATA`) hoặc `readyState = 2` (`HAVE_CURRENT_DATA`) cho đến khi tab được focus trở lại.
+
+### Mục tiêu chẩn đoán
+Bằng cách chèn các bản ghi nhật ký (logs) đo lường có cấu trúc tại các điểm kiểm tra thực thi quan trọng, chúng ta có thể xác định:
+- Thẻ video có được tìm thấy nhưng bị kẹt ở trạng thái `paused = true` hay không.
+- Việc tải bộ đệm mạng có bị tạm dừng hay không (`networkState = 2` hoặc `3`, `buffered = []`).
+- Trình trạng giới hạn chạy nền của Chromium có đang ngăn chặn việc gọi hàm phục hồi Layer 6 `v.play()` hoặc thực thi `setInterval` hay không.
+- Các cơ chế ghi đè `document.visibilityState` / `hasFocus()` có đang hoạt động thành công tại thời điểm xảy ra sự cố hay không.
+
+---
+
+## 2. Hàm Trợ giúp Ghi nhật ký Chẩn đoán Chuẩn hóa
+
+Để đảm bảo tính nhất quán giữa tất cả các điểm ghi log, hãy sử dụng hàm bổ trợ sau:
 
 ```javascript
 function logPlaybackDiagnostics(tag, video) {
@@ -54,37 +54,37 @@ function logPlaybackDiagnostics(tag, video) {
 
 ---
 
-## 3. Recommended Logging Insertion Points
+## 3. Các Điểm Chèn Nhật ký Khuyến nghị
 
-### Point 1: Initial Video Element Detection & Binding
+### Điểm 1: Phát hiện & Liên kết Phần tử Video Ban đầu
 * **File:** [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js)
-* **Function:** `watchForVideoElement()`
-* **Placement:** Immediately after `currentVideoElement = targetVideo;` is assigned.
-* **Purpose:** Verifies the exact DOM state, buffer state, and visibility properties the moment a `<video>` element is discovered by the extension.
+* **Hàm:** `watchForVideoElement()`
+* **Vị trí:** Ngay sau khi gán biến `currentVideoElement = targetVideo;`.
+* **Mục đích:** Xác minh trạng thái DOM, trạng thái bộ đệm (buffer) và các thuộc tính visibility chính xác tại thời điểm thẻ `<video>` được phát hiện bởi extension.
 
-#### Code Snippet to Insert:
+#### Đoạn code cần chèn:
 ```javascript
-// Inside watchForVideoElement() after targetVideo is selected:
+// Bên trong watchForVideoElement() sau khi targetVideo được chọn:
 currentVideoElement = targetVideo;
 logPlaybackDiagnostics("VIDEO_BOUND", currentVideoElement);
 ```
 
-#### Expected DevTools Console Output:
+#### Kết quả đầu ra dự kiến ở DevTools Console:
 ```text
 [PLAYBACK-DEBUG] [VIDEO_BOUND] t=1420.50ms | doc.hidden=false | doc.visState=visible | doc.hasFocus=true | v.readyState=1 | v.netState=2 | v.paused=true | v.currentTime=0.00 | v.duration=15.40 | v.buffered=[["0.00","1.20"]]
 ```
 
 ---
 
-### Point 2: HTML5 Media Event Listeners (`playing`, `pause`, `waiting`, `stalled`, `canplay`)
+### Điểm 2: Trình lắng nghe sự kiện HTML5 Media (`playing`, `pause`, `waiting`, `stalled`, `canplay`)
 * **File:** [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js)
-* **Function:** `watchForVideoElement()`
-* **Placement:** Inside `watchForVideoElement()`, bind event listeners directly to `currentVideoElement`.
-* **Purpose:** Tracks exact native media state transitions (e.g., whether the browser fires `waiting` or `stalled` when background tab buffering halts).
+* **Hàm:** `watchForVideoElement()`
+* **Vị trí:** Bên trong `watchForVideoElement()`, đăng ký các sự kiện lắng nghe trực tiếp trên `currentVideoElement`.
+* **Mục đích:** Theo dõi chính xác các thay đổi trạng thái phát video gốc (ví dụ: trình duyệt có kích hoạt sự kiện `waiting` hoặc `stalled` khi quá trình nạp bộ đệm của tab chạy nền bị dừng lại hay không).
 
-#### Code Snippet to Insert:
+#### Đoạn code cần chèn:
 ```javascript
-// Inside watchForVideoElement() after binding timeupdate / ended:
+// Bên trong watchForVideoElement() sau khi đăng ký timeupdate / ended:
 ["playing", "pause", "waiting", "stalled", "canplay", "canplaythrough"].forEach(function(evtName) {
     currentVideoElement.addEventListener(evtName, function() {
         logPlaybackDiagnostics("EVENT_" + evtName.toUpperCase(), currentVideoElement);
@@ -92,7 +92,7 @@ logPlaybackDiagnostics("VIDEO_BOUND", currentVideoElement);
 });
 ```
 
-#### Expected DevTools Console Output:
+#### Kết quả đầu ra dự kiến ở DevTools Console:
 ```text
 [PLAYBACK-DEBUG] [EVENT_WAITING] t=2150.80ms | doc.hidden=false | doc.visState=visible | doc.hasFocus=true | v.readyState=2 | v.netState=2 | v.paused=false | v.currentTime=0.00 | v.duration=15.40 | v.buffered=[["0.00","0.50"]]
 [PLAYBACK-DEBUG] [EVENT_STALLED] t=4150.10ms | doc.hidden=false | doc.visState=visible | doc.hasFocus=true | v.readyState=2 | v.netState=2 | v.paused=false | v.currentTime=0.00 | v.duration=15.40 | v.buffered=[["0.00","0.50"]]
@@ -100,15 +100,15 @@ logPlaybackDiagnostics("VIDEO_BOUND", currentVideoElement);
 
 ---
 
-### Point 3: Layer 6 Forced Playback Recovery Interval
+### Điểm 3: Chu kỳ Tự động Phục hồi Playback của Layer 6
 * **File:** [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js)
-* **Function:** `initPlaybackRecovery()`
-* **Placement:** Inside the 1.5-second recovery `setInterval` loop when `v.paused === true`.
-* **Purpose:** Determines if `v.play().catch()` is actively being executed or if browser background throttling is freezing the `setInterval` timer entirely.
+* **Hàm:** `initPlaybackRecovery()`
+* **Vị trí:** Bên trong vòng lặp `setInterval` phục hồi chu kỳ 1.5 giây khi `v.paused === true`.
+* **Mục đích:** Xác định xem lệnh `v.play().catch()` có đang được thực thi tích cực hay bộ định thời `setInterval` đã bị đóng băng hoàn toàn bởi cơ chế tiết kiệm tài nguyên của trình duyệt.
 
-#### Code Snippet to Insert:
+#### Đoạn code cần chèn:
 ```javascript
-// Inside initPlaybackRecovery() setInterval loop:
+// Bên trong vòng lặp setInterval của initPlaybackRecovery():
 if (v.paused && v.src && v.duration && v.duration > 0 && !v.ended) {
     logPlaybackDiagnostics("LAYER6_RECOVERY_ATTEMPT", v);
     v.play().then(function() {
@@ -120,7 +120,7 @@ if (v.paused && v.src && v.duration && v.duration > 0 && !v.ended) {
 }
 ```
 
-#### Expected DevTools Console Output:
+#### Kết quả đầu ra dự kiến ở DevTools Console:
 ```text
 [PLAYBACK-DEBUG] [LAYER6_RECOVERY_ATTEMPT] t=3500.00ms | doc.hidden=false | doc.visState=visible | doc.hasFocus=true | v.readyState=1 | v.netState=2 | v.paused=true | v.currentTime=0.00 | v.duration=12.10 | v.buffered=[]
 [PLAYBACK-DEBUG] [LAYER6_PLAY_FAILED] NotAllowedError: play() failed because the user didn't interact with the document first.
@@ -128,21 +128,21 @@ if (v.paused && v.src && v.duration && v.duration > 0 && !v.ended) {
 
 ---
 
-### Point 4: 6-Second Stuck Video Monitor Interval
+### Điểm 4: Chu kỳ Giám sát Video Bị Kẹt (Stuck) 6 Giây
 * **File:** [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js)
-* **Function:** `startStuckMonitor()`
-* **Placement:** Inside the 1-second `stuckInterval` loop when `stuckSeconds > 0`.
-* **Purpose:** Monitors whether video playback is frozen at a specific `currentTime` timestamp and tracks how `stuckSeconds` increments over time.
+* **Hàm:** `startStuckMonitor()`
+* **Vị trí:** Bên trong vòng lặp `stuckInterval` 1 giây khi `stuckSeconds > 0`.
+* **Mục đích:** Theo dõi xem video phát có bị đóng băng tại một dấu thời gian `currentTime` cụ thể hay không và theo dõi cách biến `stuckSeconds` tăng dần theo thời gian.
 
-#### Code Snippet to Insert:
+#### Đoạn code cần chèn:
 ```javascript
-// Inside startStuckMonitor() timer when Math.abs(currentTime - lastVideoTime) < 0.05:
+// Bên trong bộ hẹn giờ startStuckMonitor() khi Math.abs(currentTime - lastVideoTime) < 0.05:
 if (stuckSeconds > 0) {
     logPlaybackDiagnostics("STUCK_MONITOR_TICK_" + stuckSeconds + "S", video);
 }
 ```
 
-#### Expected DevTools Console Output:
+#### Kết quả đầu ra dự kiến ở DevTools Console:
 ```text
 [PLAYBACK-DEBUG] [STUCK_MONITOR_TICK_1S] t=5010.20ms | doc.hidden=false | doc.visState=visible | doc.hasFocus=true | v.readyState=3 | v.netState=2 | v.paused=false | v.currentTime=2.14 | v.duration=20.00 | v.buffered=[["0.00","2.14"]]
 [PLAYBACK-DEBUG] [STUCK_MONITOR_TICK_2S] t=6015.40ms | doc.hidden=false | doc.visState=visible | doc.hasFocus=true | v.readyState=3 | v.netState=2 | v.paused=false | v.currentTime=2.14 | v.duration=20.00 | v.buffered=[["0.00","2.14"]]
@@ -150,64 +150,64 @@ if (stuckSeconds > 0) {
 
 ---
 
-### Point 5: Post-Load Audio & Shop Inspection Check
+### Điểm 5: Kiểm tra Âm thanh & Nhận diện TikTok Shop Sau khi Tải video
 * **File:** [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js)
-* **Function:** `checkVideoAudioAndShop()`
-* **Placement:** At the entry of `checkVideoAudioAndShop()`.
-* **Purpose:** Verifies audio track state (`v.muted`, `v.volume`) and DOM elements 2.5 seconds after video element binding.
+* **Hàm:** `checkVideoAudioAndShop()`
+* **Vị trí:** Ngay khi bắt đầu vào hàm `checkVideoAudioAndShop()`.
+* **Mục đích:** Xác minh trạng thái track âm thanh (`v.muted`, `v.volume`) và các thành phần DOM sau khi liên kết video được 2.5 giây.
 
-#### Code Snippet to Insert:
+#### Đoạn code cần chèn:
 ```javascript
-// Inside checkVideoAudioAndShop() entry:
+// Bên trong hàm checkVideoAudioAndShop():
 logPlaybackDiagnostics("POST_LOAD_CHECK_2500MS", currentVideoElement);
 ```
 
-#### Expected DevTools Console Output:
+#### Kết quả đầu ra dự kiến ở DevTools Console:
 ```text
 [PLAYBACK-DEBUG] [POST_LOAD_CHECK_2500MS] t=3920.10ms | doc.hidden=false | doc.visState=visible | doc.hasFocus=true | v.readyState=4 | v.netState=1 | v.paused=false | v.currentTime=1.20 | v.duration=18.50 | v.buffered=[["0.00","18.50"]]
 ```
 
 ---
 
-### Point 6: Tab Focus & Active Status Check in Service Worker
+### Điểm 6: Kiểm tra Hoạt động & Focus của Tab trong Service Worker
 * **File:** [background.js](file:///d:/A.Myself/Random-Video/background.js)
-* **Function:** `getOrCreateTikTokTab(targetUrl)`
-* **Placement:** Inside `getOrCreateTikTokTab()` before calling `chrome.tabs.update()`.
-* **Purpose:** Logs whether the target TikTok tab is created/updated with `{ active: true }` or in the background (`{ active: false }`).
+* **Hàm:** `getOrCreateTikTokTab(targetUrl)`
+* **Vị trí:** Bên trong `getOrCreateTikTokTab()` trước khi gọi `chrome.tabs.update()`.
+* **Mục đích:** Ghi lại nhật ký cho biết tab TikTok mục tiêu được tạo/cập nhật với thuộc tính hoạt động hoạt bát `{ active: true }` hay chạy trong nền (`{ active: false }`).
 
-#### Code Snippet to Insert:
+#### Đoạn code cần chèn:
 ```javascript
-// Inside getOrCreateTikTokTab() in background.js:
+// Bên trong getOrCreateTikTokTab() ở background.js:
 console.log(`[PLAYBACK-DEBUG] [BG_TAB_NAVIGATION] t=${Date.now()} | tabId=${targetTab.id} | active=${targetTab.active} | targetUrl=${targetUrl}`);
 ```
 
-#### Expected DevTools Console Output:
+#### Kết quả đầu ra dự kiến ở DevTools Console:
 ```text
 [PLAYBACK-DEBUG] [BG_TAB_NAVIGATION] t=1722800000000 | tabId=142 | active=false | targetUrl=https://www.tiktok.com/@username/video/7391000000
 ```
 
 ---
 
-## 4. Summary Table of Diagnostic Logging Locations
+## 4. Bảng Tổng kết Vị trí Ghi nhật ký Chẩn đoán
 
-| Location # | Target File | Target Function | Trigger Condition | Primary Value |
-|:---|:---|:---|:---|:---|
-| **1** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `watchForVideoElement()` | `<video>` element found in DOM | Verifies initial buffer & readyState upon DOM binding |
-| **2** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `watchForVideoElement()` | Native HTML5 media events | Detects `waiting` / `stalled` events when network buffering stops |
-| **3** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `initPlaybackRecovery()` | Every 2s when `v.paused == true` | Logs Layer 6 `v.play()` attempt success or rejection errors |
-| **4** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `startStuckMonitor()` | Every 1s when `currentTime` is frozen | Tracks freeze duration when video stalls mid-playback |
-| **5** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `checkVideoAudioAndShop()` | 2.5s after video detection | Inspects volume, muted status, and shop element flags |
-| **6** | [background.js](file:///d:/A.Myself/Random-Video/background.js) | `getOrCreateTikTokTab()` | Tab URL navigation | Logs tab active status (`active=true` vs `active=false`) |
+| Vị trí | File Mục tiêu | Hàm Mục tiêu | Điều kiện kích hoạt | Giá trị cốt lõi được ghi log |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `watchForVideoElement()` | Tìm thấy phần tử `<video>` trong DOM | Xác minh dung lượng bộ đệm ban đầu & readyState khi liên kết DOM |
+| **2** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `watchForVideoElement()` | Sự kiện media gốc của HTML5 | Phát hiện các sự kiện `waiting` / `stalled` khi bộ đệm mạng dừng nạp |
+| **3** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `initPlaybackRecovery()` | Mỗi 1.5 giây khi `v.paused == true` | Ghi nhật ký kết quả gọi lệnh `v.play()` Layer 6 thành công hay thất bại |
+| **4** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `startStuckMonitor()` | Mỗi 1 giây khi `currentTime` bị đứng | Theo dõi thời lượng bị kẹt khi video dừng giữa chừng khi đang phát |
+| **5** | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `checkVideoAudioAndShop()` | 2.5 giây sau khi phát hiện video | Kiểm tra âm lượng, trạng thái tắt tiếng, và các cờ phần tử shop |
+| **6** | [background.js](file:///d:/A.Myself/Random-Video/background.js) | `getOrCreateTikTokTab()` | Điều hướng URL của Tab | Ghi lại trạng thái hoạt động của tab (`active=true` so với `active=false`) |
 
 ---
 
-## 5. Diagnostic Interpretation Matrix
+## 5. Ma trận Phân tích Kết quả Chẩn đoán
 
-When testing background tab video playback, review DevTools Console logs against this matrix:
+Khi thử nghiệm phát video trong tab chạy nền, hãy đối chiếu các log quan sát được trong DevTools Console với ma trận sau:
 
-| Log Pattern Observed | Root Cause | Solution |
-|:---|:---|:---|
-| `v.readyState = 1` (`HAVE_METADATA`), `v.buffered = []`, `v.paused = true` | TikTok web player halted network fetch because tab is in background. | Enforce tab focus during navigation or dispatch synthetic play gesture. |
-| `LAYER6_PLAY_FAILED: play() failed because the user didn't interact` | Chrome Autoplay Policy blocked programmatic `.play()` without user gesture. | Ensure extension popup click or keyboard shortcut acts as activation context. |
-| `EVENT_STALLED`, `v.netState = 2`, `v.buffered` stopped advancing | Chrome background tab network throttling deprioritized media stream requests. | Enable background media audio keep-alive stream or tab focus. |
-| No log output from `LAYER6_RECOVERY_ATTEMPT` for > 10 seconds | Chromium background timer throttling delayed `setInterval` execution. | Use `chrome.alarms` or Service Worker tab ping to maintain timer cadence. |
+| Mẫu Log Quan sát được | Nguyên nhân gốc rễ | Giải pháp |
+| :--- | :--- | :--- |
+| `v.readyState = 1` (`HAVE_METADATA`), `v.buffered = []`, `v.paused = true` | Trình phát web TikTok dừng tải dữ liệu từ mạng vì tab đang chạy ẩn dưới nền. | Ép focus tab khi điều hướng hoặc gửi tương tác cử chỉ phát giả lập. |
+| `LAYER6_PLAY_FAILED: play() failed because the user didn't interact` | Chính sách Autoplay của Chrome chặn phát video theo chương trình `.play()` khi thiếu tương tác thực từ người dùng. | Đảm bảo tương tác click vào Popup extension hoặc phím tắt đóng vai trò là ngữ cảnh kích hoạt. |
+| `EVENT_STALLED`, `v.netState = 2`, `v.buffered` dừng tăng lên | Cơ chế hạn chế chạy nền của Chrome giảm độ ưu tiên của các luồng request dữ liệu đa phương tiện. | Kích hoạt luồng âm thanh giữ kết nối ẩn (Silent Audio Keep-Alive) hoặc focus tab. |
+| Không thấy xuất hiện log `LAYER6_RECOVERY_ATTEMPT` quá 10 giây | Trình duyệt hạn chế bộ hẹn giờ chạy nền làm chậm trễ tiến trình thực thi của `setInterval`. | Sử dụng `chrome.alarms` hoặc cơ chế ping định kỳ từ Service Worker để duy trì hoạt động bộ hẹn giờ. |
