@@ -39,12 +39,16 @@
         "https://www.tiktok.com/*"
       ],
       "js": [
-        "js/selectors.js",
-        "js/content-utils.js",
-        "js/content-bypass.js",
-        "js/content-video.js",
-        "js/content-checkpoint.js",
-        "js/content-core.js",
+        "js/content/crawler/selectors.js",
+        "js/content/crawler/content-utils.js",
+        "js/content/stealth/content-stealth.js",
+        "js/content/behavior/content-behavior.js",
+        "js/content/stealth/content-interceptor.js",
+        "js/content/video/content-video-recovery.js",
+        "js/content/video/content-video-smart.js",
+        "js/content/video/content-video-watcher.js",
+        "js/content/crawler/content-checkpoint.js",
+        "js/content/crawler/content-core.js",
         "content.js"
       ],
       "run_at": "document_idle"
