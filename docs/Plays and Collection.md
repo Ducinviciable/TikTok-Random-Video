@@ -46,7 +46,7 @@ Sau đó nó được gửi sang background dưới dạng `limit`.
 - Nó cũng ảnh hưởng đến số lần scroll tối đa vì hệ thống tính:
 
 ```javascript
-const maxScrolls = Math.ceil(targetLimit / 10) + 15;
+const maxScrolls = Math.ceil((existingCount + targetLimit) / 10) + 15;
 ```
 
 ### Ảnh hưởng gián tiếp

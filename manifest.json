@@ -1,10 +1,17 @@
 {
   "manifest_version": 3,
   "name": "TikTok Random Liked",
-  "version": "3.4.1",
+  "version": "3.5",
   "description": "Random xem video đã Like trên TikTok",
-  "permissions": ["activeTab", "tabs", "scripting", "storage"],
-  "host_permissions": ["https://www.tiktok.com/*"],
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.tiktok.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -28,7 +35,9 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.tiktok.com/*"],
+      "matches": [
+        "https://www.tiktok.com/*"
+      ],
       "js": [
         "js/selectors.js",
         "js/content-utils.js",

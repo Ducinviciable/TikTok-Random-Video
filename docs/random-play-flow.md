@@ -29,7 +29,7 @@ This document provides a comprehensive, function-by-function technical breakdown
   └── initVideoWatcher() -> watchForVideoElement()
         ├── Attach loop attribute (prevent feed auto-advance)
         ├── Attach timeupdate listener (detect video end < 0.5s)
-        ├── startStuckMonitor(): 8-second freeze watchdog
+        ├── startStuckMonitor(): 6-second freeze watchdog (soft recovery at 5s)
         └── checkVideoAudioAndShop(): Auto-skip muted or shop videos
               │
               ▼ (Video reaches end or triggers auto-next)
@@ -59,7 +59,7 @@ The execution order of all functions involved in the random playback process:
 | 10 | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `initVideoWatcher()` | Verifies `/video/` page state & auto-next setting | `autoInit()`, `urlObserver`, `chrome.runtime.onMessage` (`setAutoNext`) | `chrome.storage.local.get()`, `watchForVideoElement()` |
 | 11 | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `watchForVideoElement()` | Finds largest video element, binds events & sets `loop` | `initVideoWatcher()`, DOM observer | `startStuckMonitor()`, `checkVideoAudioAndShop()`, `onVideoTimeUpdate()`, `onVideoEnded()` |
 | 12 | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `initPlaybackRecovery()` | Layer 6 watchdog: forces playback if paused & handles 403 | IIFE executed on content script load | `setInterval()`, `v.play()`, `showToast()`, `chrome.runtime.sendMessage()` |
-| 13 | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `startStuckMonitor()` | Monitors `currentTime` to detect 8-second video freeze | `watchForVideoElement()` | `setInterval()`, `requestNextVideo()` |
+| 13 | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `startStuckMonitor()` | Monitors `currentTime` to detect 6-second video freeze (soft recovery at 5s) | `watchForVideoElement()` | `setInterval()`, `requestNextVideo()` |
 | 14 | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `checkVideoAudioAndShop()` | Inspects DOM for TikTok shop or muted audio keywords | `watchForVideoElement()` (via `setTimeout`) | `requestNextVideo()` |
 | 15 | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `onVideoTimeUpdate()` | Primary video completion detector (remaining time < 0.5s) | Video `timeupdate` Event Listener | `requestNextVideo()`, `video.pause()` |
 | 16 | [js/content-video.js](file:///d:/A.Myself/Random-Video/js/content-video.js) | `requestNextVideo()` | Requests background script to navigate to next random video | `onVideoTimeUpdate()`, `onVideoEnded()`, `startStuckMonitor()` | `chrome.runtime.sendMessage({ action: "playNext" })` |
@@ -221,7 +221,7 @@ sequenceDiagram
     note over CS,BG: 403 / Access Denied Recovery Flow
     CS->>CS: Layer 6 detects 403 title/overlay
     CS->>BG: chrome.runtime.sendMessage({ action: "handle403Detected" })
-    BG->>BG: handleRandomLiked()
+    BG->>BG: triggerTiered403Recovery()
     BG->>Chrome Tabs API: chrome.tabs.update(tabId, { url: newRandomUrl })
 ```
 
@@ -234,7 +234,7 @@ sequenceDiagram
 | `async / await` | `background.js` (`handleRandomLiked`, `selectRandomVideo`, `getOrCreateTikTokTab`) | Handles asynchronous Chrome extension API calls (`chrome.storage.local.get`, `chrome.tabs.query`, `chrome.tabs.update`). |
 | `Promise` | `popup.js` (`sendMsg`), `background.js` (`randomDelay`) | Wraps message passing and provides randomized human-like delay between video transitions. |
 | `setTimeout` | `js/content-video.js` (`checkVideoAudioAndShop`, `showToast`, `requestNextVideo`) | Delays execution for audio/shop checks (2.5s) to allow video metadata and DOM elements to load. |
-| `setInterval` | `background.js` (Watchdog poller), `js/content-video.js` (Layer 4, 5, 6, `startStuckMonitor`) | 1. Layer 6 periodic playback check (every 2s).<br>2. Stuck monitor checking `currentTime` freeze (every 1s).<br>3. Background 403 watchdog check (every 4s). |
+| `setInterval` | `background.js` (Watchdog poller), `js/content-video.js` (Layer 4, 5, 6, `startStuckMonitor`) | 1. Layer 6 periodic playback check (every 1.5s).<br>2. Stuck monitor checking `currentTime` freeze (every 1s).<br>3. Background 403 watchdog check (every 3s). |
 | `MutationObserver` | `content.js` (`urlObserver`), `js/content-video.js` (`loopObserver`) | 1. `urlObserver` monitors `document.body` for Single-Page Application (SPA) URL changes.<br>2. `loopObserver` monitors `<video>` attribute changes to re-add `loop` if TikTok attempts to remove it. |
 
 ---
@@ -251,7 +251,7 @@ sequenceDiagram
 [Content Script Injected / autoInit()]
   │
   ├── 0ms: urlObserver detects /video/ URL & calls initVideoWatcher()
-  ├── 2000ms: Layer 6 initPlaybackRecovery() runs first check:
+  ├── 1500ms: Layer 6 initPlaybackRecovery() runs first check:
   │           If video.paused == true -> executes v.play().catch()
   └── 2500ms: checkVideoAudioAndShop() executes:
               - If shop video detected -> triggers requestNextVideo()
