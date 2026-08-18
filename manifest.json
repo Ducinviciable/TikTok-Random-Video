@@ -33,6 +33,19 @@
       "global": true
     }
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "player.html",
+        "style-player.css",
+        "js/player/player-cdn-refresh.js",
+        "js/player/player-audio.js",
+        "js/player/player-app.js",
+        "js/content/content-cdn-bridge.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": [
