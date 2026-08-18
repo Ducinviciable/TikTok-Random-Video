@@ -1,4 +1,4 @@
-/*  Design Tokens & Refined Glassmorphism System  */
+/* ── Design Tokens & Refined 4-Panel Glassmorphism System ── */
 :root {
   --background: #f3f5fc;
   --foreground: #2d3345;
@@ -8,34 +8,22 @@
   --cyan: #7fe0f5;
   --pink: #f5b0d4;
 
-  /* Pure Glassmorphism Tokens */
-  --glass-bg: rgba(255, 255, 255, 0.24);
-  --glass-bg-elevated: rgba(255, 255, 255, 0.30);
-  --glass-bg-subtle: rgba(255, 255, 255, 0.18);
-  --glass-border: rgba(255, 255, 255, 0.30);
-  --glass-border-strong: rgba(255, 255, 255, 0.45);
-  --glass-blur: 24px;
+  --glass-bg: rgba(255, 255, 255, 0.28);
+  --glass-border: rgba(255, 255, 255, 0.38);
+  --glass-blur: 20px;
   --glass-saturate: 160%;
 
-  /* Dual-layer Depth Shadows + Top-edge Inner Highlight Reflection */
   --glass-shadow:
-    0 16px 40px -8px rgba(90, 105, 155, 0.14),
-    0 4px 12px -2px rgba(90, 105, 155, 0.08),
-    0 1px 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 6px 16px -2px rgba(90, 105, 155, 0.08),
+    0 2px 6px -1px rgba(90, 105, 155, 0.04),
+    0 1px 1px 0 rgba(255, 255, 255, 0.75) inset,
     0 0 0 1px rgba(255, 255, 255, 0.25) inset;
-
-  --glass-shadow-elevated:
-    0 24px 54px -10px rgba(80, 95, 145, 0.18),
-    0 6px 18px -3px rgba(80, 95, 145, 0.10),
-    0 1px 2px 0 rgba(255, 255, 255, 0.85) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.35) inset;
 
   --radius-panel: 24px;
   --radius-bar: 20px;
   --radius-sm: 12px;
 }
 
-/*  Reset & Base  */
 *,
 *::before,
 *::after {
@@ -102,7 +90,38 @@ a:hover {
   text-decoration: underline;
 }
 
-/*  Core Glass Panel  */
+/* Master Wrapper */
+.master-wrapper {
+  height: 100vh;
+  max-height: 100vh;
+  width: 100vw;
+  max-width: 100vw;
+  padding: 16px 20px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* App Shell - Unified 4-Panel Grid */
+.app-shell {
+  width: 100%;
+  max-width: 1600px;
+  height: 100%;
+  max-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(280px, 330px) minmax(360px, 1fr) minmax(280px, 330px);
+  grid-template-rows: minmax(0, 1fr) 68px;
+  gap: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Core Glass Panel*/
 .glass-panel {
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -110,38 +129,12 @@ a:hover {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-panel);
   box-shadow: var(--glass-shadow);
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
-}
-
-/*  App Shell & Viewport Grid  */
-.app-shell {
-  height: 100vh;
-  max-height: 100vh;
-  width: 100%;
-  padding: 18px 22px 20px;
-  position: relative;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: 1fr 68px;
-  row-gap: 30px;
-  /* Clear 30px visual separation between panels and player bar */
   box-sizing: border-box;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
 }
 
-.app-grid {
-  height: 100%;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(280px, 330px) minmax(360px, 1fr) minmax(280px, 330px);
-  grid-template-rows: minmax(0, 1fr);
-  gap: 18px;
-  max-width: 1600px;
-  width: 100%;
-  margin: 0 auto;
-  overflow: hidden;
-}
-
-/*  Icon Button  */
+/* Icon Button */
 .icon-button {
   background: rgba(255, 255, 255, 0.35);
   color: var(--muted-fg);
@@ -168,8 +161,10 @@ a:hover {
   pointer-events: none;
 }
 
-/*  LIBRARY PANEL  */
+/* ── 1. LIBRARY PANEL (Left Sidebar) ─────────────────── */
 .library-panel {
+  grid-column: 1;
+  grid-row: 1;
   height: 100%;
   max-height: 100%;
   min-height: 0;
@@ -177,10 +172,9 @@ a:hover {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
 }
 
-/* Brand row */
+/* Brand header */
 .brand-row {
   flex-shrink: 0;
   display: flex;
@@ -228,7 +222,7 @@ a:hover {
   animation: pulse 2s infinite;
 }
 
-/* Stat grid */
+/* Stat Grid */
 .stat-grid {
   flex-shrink: 0;
   display: grid;
@@ -333,7 +327,7 @@ a:hover {
   color: var(--muted-fg);
 }
 
-/* Import drop zone */
+/* Drop Zone */
 .import-zone {
   flex-shrink: 0;
   border: 1.5px dashed rgba(139, 156, 246, 0.45);
@@ -381,7 +375,7 @@ a:hover {
   padding: 0 2px;
 }
 
-/* Playlist */
+/* Playlist: Dedicated Scrollable Container */
 .playlist {
   flex: 1 1 0%;
   min-height: 0;
@@ -394,7 +388,6 @@ a:hover {
   overscroll-behavior: contain;
 }
 
-/* Scrollbar */
 .playlist::-webkit-scrollbar {
   width: 5px;
 }
@@ -413,7 +406,7 @@ a:hover {
   background: rgba(139, 156, 246, 0.65);
 }
 
-/*  Track Card  */
+/* Track Card */
 .track-card {
   flex-shrink: 0;
   position: relative;
@@ -560,13 +553,10 @@ a:hover {
   color: var(--foreground);
 }
 
-/*  CENTER STAGE  */
+/* ── 2. CENTER STAGE (Center Player Panel) ───────────── */
 .center-stage {
-  background: var(--glass-bg-elevated);
-  backdrop-filter: blur(28px) saturate(170%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  border: 1px solid var(--glass-border-strong);
-  box-shadow: var(--glass-shadow-elevated);
+  grid-column: 2;
+  grid-row: 1;
   height: 100%;
   max-height: 100%;
   min-height: 0;
@@ -575,7 +565,6 @@ a:hover {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  box-sizing: border-box;
 }
 
 .stage-top {
@@ -659,7 +648,6 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 7px;
-  z-index: 10;
 }
 
 .live-dot {
@@ -711,7 +699,7 @@ a:hover {
   background: repeating-radial-gradient(circle at 50% 50%,
       #58617b 0 2px,
       #434c61 3px 5px);
-  box-shadow: 0 20px 40px rgba(60, 70, 105, 0.30), inset 0 0 0 10px rgba(255, 255, 255, 0.06);
+  box-shadow: 0 16px 36px rgba(60, 70, 105, 0.25), inset 0 0 0 10px rgba(255, 255, 255, 0.06);
   transition: transform 0.25s;
 }
 
@@ -788,8 +776,10 @@ a:hover {
   display: block;
 }
 
-/*  DSP PANEL  */
+/* ── 3. DSP PANEL (Right Sidebar) ────────────────────── */
 .dsp-panel {
+  grid-column: 3;
+  grid-row: 1;
   height: 100%;
   max-height: 100%;
   min-height: 0;
@@ -797,7 +787,6 @@ a:hover {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-sizing: border-box;
 }
 
 .section-heading {
@@ -1017,30 +1006,21 @@ a:hover {
   margin-top: 1px;
 }
 
-/*  MEDIA BAR  */
+/* MEDIA BAR */
 .media-bar {
-  background: rgba(255, 255, 255, 0.28);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--glass-border-strong);
-  border-radius: var(--radius-bar);
-  box-shadow:
-    0 18px 45px -8px rgba(80, 95, 145, 0.16),
-    0 4px 12px -2px rgba(80, 95, 145, 0.08),
-    0 1px 1px 0 rgba(255, 255, 255, 0.75) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+  grid-column: 1 / -1;
+  grid-row: 2;
   height: 68px;
-  max-width: 1600px;
   width: 100%;
-  margin: 0 auto;
+  border-radius: var(--radius-bar);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 6px 24px;
   position: relative;
-  box-sizing: border-box;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* Top Edge Interactive Timeline */
@@ -1173,11 +1153,10 @@ a:hover {
 }
 
 .play-button:hover {
-  transform: translateY(-2px) scale(1.05);
+  transform: translateY(-2px scale(1.05));
   box-shadow: 0 12px 26px rgba(139, 156, 246, 0.50);
 }
 
-/* Play/Pause icon exclusive states */
 .play-button .icon-play {
   display: block !important;
 }
@@ -1231,7 +1210,7 @@ a:hover {
   cursor: pointer;
 }
 
-/*  Toast  */
+/* ── Toast ───────────────────────────────────────────── */
 .toast {
   position: fixed;
   right: 24px;
@@ -1241,8 +1220,8 @@ a:hover {
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.85);
-  box-shadow: var(--glass-shadow);
   border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(80, 95, 145, 0.16);
   padding: 10px 14px;
   display: flex;
   align-items: center;
@@ -1266,7 +1245,7 @@ a:hover {
   place-items: center;
 }
 
-/*  Animations  */
+/* Animations */
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1301,9 +1280,9 @@ a:hover {
   }
 }
 
-/*  Responsive Behavior  */
+/* ── Responsive Behavior ─────────────────────────────── */
 @media (max-width: 1100px) {
-  .app-grid {
+  .app-shell {
     grid-template-columns: 260px minmax(360px, 1fr);
   }
 
@@ -1321,30 +1300,31 @@ a:hover {
     overflow-y: auto;
   }
 
-  .app-shell {
+  .master-wrapper {
     height: auto;
     max-height: none;
     padding: 12px;
     overflow: visible;
-    display: flex;
-    flex-direction: column;
-    row-gap: 16px;
   }
 
-  .app-grid {
+  .app-shell {
+    height: auto;
+    max-height: none;
     display: flex;
     flex-direction: column;
-    height: auto;
-    overflow: visible;
-    gap: 14px;
+    gap: 16px;
   }
 
   .library-panel {
+    grid-column: auto;
+    grid-row: auto;
     height: 480px;
     max-height: 480px;
   }
 
   .center-stage {
+    grid-column: auto;
+    grid-row: auto;
     height: 480px;
     max-height: 480px;
     order: -1;
@@ -1355,12 +1335,16 @@ a:hover {
   }
 
   .dsp-panel {
+    grid-column: auto;
+    grid-row: auto;
     display: flex;
     height: 450px;
     max-height: 450px;
   }
 
   .media-bar {
+    grid-column: auto;
+    grid-row: auto;
     height: auto;
     min-height: 96px;
     flex-wrap: wrap;
@@ -1398,7 +1382,7 @@ a:hover {
   }
 }
 
-/*  Colour helpers  */
+/* Colour helpers */
 .bg-a {
   background: linear-gradient(135deg, #d8c9ff, #aee9f1);
 }
