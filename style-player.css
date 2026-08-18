@@ -1,4 +1,3 @@
-/* ── Design Tokens & Refined 4-Panel Glassmorphism System ── */
 :root {
   --background: #f3f5fc;
   --foreground: #2d3345;
@@ -90,7 +89,6 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Master Wrapper */
 .master-wrapper {
   height: 100vh;
   max-height: 100vh;
@@ -104,7 +102,6 @@ a:hover {
   overflow: hidden;
 }
 
-/* App Shell - Unified 4-Panel Grid */
 .app-shell {
   width: 100%;
   max-width: 1600px;
@@ -121,7 +118,6 @@ a:hover {
   box-shadow: none;
 }
 
-/* Core Glass Panel*/
 .glass-panel {
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -134,7 +130,6 @@ a:hover {
   transition: box-shadow 0.25s ease, border-color 0.25s ease;
 }
 
-/* Icon Button */
 .icon-button {
   background: rgba(255, 255, 255, 0.35);
   color: var(--muted-fg);
@@ -161,7 +156,6 @@ a:hover {
   pointer-events: none;
 }
 
-/* ── 1. LIBRARY PANEL (Left Sidebar) ─────────────────── */
 .library-panel {
   grid-column: 1;
   grid-row: 1;
@@ -174,7 +168,6 @@ a:hover {
   flex-direction: column;
 }
 
-/* Brand header */
 .brand-row {
   flex-shrink: 0;
   display: flex;
@@ -222,7 +215,6 @@ a:hover {
   animation: pulse 2s infinite;
 }
 
-/* Stat Grid */
 .stat-grid {
   flex-shrink: 0;
   display: grid;
@@ -265,7 +257,6 @@ a:hover {
   background: rgba(253, 235, 244, 0.65);
 }
 
-/* Tabs */
 .tabs {
   flex-shrink: 0;
   display: flex;
@@ -298,7 +289,6 @@ a:hover {
   box-shadow: 0 4px 12px rgba(116, 130, 170, 0.12);
 }
 
-/* Search box */
 .search-box {
   flex-shrink: 0;
   display: flex;
@@ -327,7 +317,6 @@ a:hover {
   color: var(--muted-fg);
 }
 
-/* Drop Zone */
 .import-zone {
   flex-shrink: 0;
   border: 1.5px dashed rgba(139, 156, 246, 0.45);
@@ -361,7 +350,6 @@ a:hover {
   margin-bottom: 1px;
 }
 
-/* Library label */
 .library-label {
   flex-shrink: 0;
   display: flex;
@@ -375,7 +363,6 @@ a:hover {
   padding: 0 2px;
 }
 
-/* Playlist: Dedicated Scrollable Container */
 .playlist {
   flex: 1 1 0%;
   min-height: 0;
@@ -406,7 +393,6 @@ a:hover {
   background: rgba(139, 156, 246, 0.65);
 }
 
-/* Track Card */
 .track-card {
   flex-shrink: 0;
   position: relative;
@@ -432,6 +418,12 @@ a:hover {
   box-shadow: 0 4px 16px rgba(116, 130, 170, 0.14);
 }
 
+.bg-a { background: linear-gradient(135deg, #b8abf8, #8bd8f5) !important; }
+.bg-b { background: linear-gradient(135deg, #f8b8d8, #fcd5b8) !important; }
+.bg-c { background: linear-gradient(135deg, #9ae8c9, #70d6eb) !important; }
+.bg-d { background: linear-gradient(135deg, #f8c9ab, #f8b8cc) !important; }
+.bg-e { background: linear-gradient(135deg, #a8d5fb, #d4b8f8) !important; }
+
 .thumbnail {
   flex-shrink: 0;
   width: 40px;
@@ -439,9 +431,11 @@ a:hover {
   border-radius: 8px;
   overflow: hidden;
   position: relative;
-  display: grid;
-  place-items: center;
-  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 2px 8px rgba(116, 130, 170, 0.12);
 }
 
 .thumbnail img {
@@ -450,21 +444,46 @@ a:hover {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  z-index: 2;
+}
+
+.thumbnail img[hidden],
+.thumbnail img:not([src]),
+.thumbnail img[src=""],
+.now-thumb img[hidden],
+.now-thumb img:not([src]),
+.now-thumb img[src=""],
+#vinyl-thumb[hidden],
+#vinyl-thumb:not([src]),
+#vinyl-thumb[src=""] {
+  display: none !important;
 }
 
 .thumbnail-fallback {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.95);
+  z-index: 1;
+}
+
+.now-thumb-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.95);
+  z-index: 1;
 }
 
 .thumb-shine {
   position: absolute;
   inset: 0;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.55), transparent 48%);
-  z-index: 1;
+  z-index: 3;
 }
 
 .track-copy {
@@ -526,7 +545,6 @@ a:hover {
   background: rgba(245, 184, 216, 0.45);
 }
 
-/* Empty State */
 .empty-state {
   margin: auto 0;
   display: flex;
@@ -553,7 +571,6 @@ a:hover {
   color: var(--foreground);
 }
 
-/* ── 2. CENTER STAGE (Center Player Panel) ───────────── */
 .center-stage {
   grid-column: 2;
   grid-row: 1;
@@ -622,11 +639,10 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Visualizer deck */
 .visualizer-deck {
   flex: 1 1 0;
   min-height: 0;
-  padding: 10px 0 0;
+  padding: 10px 8px 0;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -642,12 +658,14 @@ a:hover {
   color: var(--muted-fg);
   font-size: 11px;
   margin-bottom: 6px;
+  padding: 0 4px;
 }
 
 .deck-label {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+  padding-left: 2px;
 }
 
 .live-dot {
@@ -656,7 +674,9 @@ a:hover {
   height: 7px;
   border-radius: 50%;
   background: #e1b0ca;
-  box-shadow: 0 0 0 4px rgba(245, 184, 216, 0.25);
+  box-shadow: 0 0 0 3px rgba(245, 184, 216, 0.35);
+  flex-shrink: 0;
+  margin-left: 2px;
 }
 
 .mode-toggle {
@@ -685,12 +705,13 @@ a:hover {
 .visualizer-area {
   flex: 1 1 0;
   min-height: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
+  width: 100%;
 }
 
-/* Vinyl */
 .vinyl {
   width: min(215px, 28vh);
   height: min(215px, 28vh);
@@ -715,15 +736,14 @@ a:hover {
   box-shadow: 0 0 0 10px rgba(255, 255, 255, 0.025), 0 0 0 22px rgba(255, 255, 255, 0.025);
 }
 
-/* Vinyl Center Label */
 .vinyl-label {
   position: absolute;
   inset: 56px;
   border-radius: 50%;
   overflow: hidden;
-  display: grid;
-  place-items: center;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: white;
   background: linear-gradient(135deg, #b6aaf2, #8edff5 55%, #f5b8d8);
   box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.3);
@@ -737,24 +757,24 @@ a:hover {
   height: 100%;
   object-fit: cover;
   border-radius: 50%;
+  z-index: 2;
 }
 
 .vinyl-fallback {
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
-  letter-spacing: 0.13em;
-  font-weight: 600;
+  border-radius: 50%;
+  overflow: hidden;
+  z-index: 1;
 }
 
-.vinyl-fallback small {
-  font-size: 7px;
-  letter-spacing: 0;
-  font-weight: 400;
+.vinyl-cover-art {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .vinyl-hole {
@@ -769,14 +789,13 @@ a:hover {
   z-index: 3;
 }
 
-/* Spectrum canvas */
 .spectrum {
   width: 100%;
   height: 180px;
   display: block;
+  margin: 0 auto;
 }
 
-/* ── 3. DSP PANEL (Right Sidebar) ────────────────────── */
 .dsp-panel {
   grid-column: 3;
   grid-row: 1;
@@ -901,7 +920,6 @@ a:hover {
   transform: translateX(14px);
 }
 
-/* Horizontal DSP Controls */
 .dsp-control {
   padding: 10px 2px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.35);
@@ -1006,7 +1024,6 @@ a:hover {
   margin-top: 1px;
 }
 
-/* MEDIA BAR */
 .media-bar {
   grid-column: 1 / -1;
   grid-row: 2;
@@ -1023,7 +1040,6 @@ a:hover {
   box-sizing: border-box;
 }
 
-/* Top Edge Interactive Timeline */
 .timeline-container {
   position: absolute;
   left: 0;
@@ -1065,7 +1081,6 @@ a:hover {
   margin: 0;
 }
 
-/* Left: Track info */
 .now-playing {
   display: flex;
   align-items: center;
@@ -1082,9 +1097,10 @@ a:hover {
   border-radius: 8px;
   overflow: hidden;
   position: relative;
-  display: grid;
-  place-items: center;
-  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
@@ -1094,13 +1110,17 @@ a:hover {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  z-index: 2;
 }
 
 .now-thumb-fallback {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  z-index: 1;
 }
 
 .now-playing-text span {
@@ -1129,7 +1149,6 @@ a:hover {
   margin-top: 1px;
 }
 
-/* Center: Integrated Playback Controls */
 .media-controls {
   display: flex;
   align-items: center;
@@ -1138,7 +1157,6 @@ a:hover {
   flex: 1;
 }
 
-/* Play/Pause Button */
 .play-button {
   width: 44px;
   height: 44px;
@@ -1173,7 +1191,6 @@ a:hover {
   display: block !important;
 }
 
-/* Right: Time & Volume */
 .media-extras {
   display: flex;
   align-items: center;
@@ -1210,7 +1227,6 @@ a:hover {
   cursor: pointer;
 }
 
-/* ── Toast ───────────────────────────────────────────── */
 .toast {
   position: fixed;
   right: 24px;
@@ -1234,10 +1250,6 @@ a:hover {
   display: none !important;
 }
 
-.toast>.toast-icon {
-  color: #d38faa;
-}
-
 .toast-close {
   background: transparent;
   color: var(--muted-fg);
@@ -1245,7 +1257,6 @@ a:hover {
   place-items: center;
 }
 
-/* Animations */
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1280,7 +1291,6 @@ a:hover {
   }
 }
 
-/* ── Responsive Behavior ─────────────────────────────── */
 @media (max-width: 1100px) {
   .app-shell {
     grid-template-columns: 260px minmax(360px, 1fr);
@@ -1382,7 +1392,6 @@ a:hover {
   }
 }
 
-/* Colour helpers */
 .bg-a {
   background: linear-gradient(135deg, #d8c9ff, #aee9f1);
 }

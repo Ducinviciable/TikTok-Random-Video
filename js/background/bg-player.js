@@ -1,216 +1,273 @@
-// Module: bg-player.js
-// Responsibilities: JIT CDN URL refresh pipeline for the Dedicated Player.
-//
-// Flow:
-//   player-cdn-refresh.js  →  background message "refreshCdnUrl"
-//   → handleRefreshCdnUrl() finds/reuses a TikTok tab
-//   → injects content-cdn-bridge.js via scripting API
-//   → bridge POSTs back "cdnBridgeResult"
-//   → we resolve the pending promise with { ok, cdnUrl }
-//
-// SAFETY RULES (never violate):
-//   - Never clear Akamai cookies (_abck, bm_*, rate, limit)
-//   - Prefer reusing an existing tiktok.com tab; avoid spamming new tabs
-//   - After extraction, do NOT leave orphan navigation or injected state
-//   - Cache CDN URLs in memory only (short TTL handled by player-cdn-refresh)
-//   - One in-flight refresh per canonical URL at a time (deduplicate)
-
 'use strict';
 
-// ── In-Flight Request Deduplication Map ───────────────────────────────────
-// Map<canonicalUrlKey, {resolve, reject, timeoutId}>
 const _inflightRefreshes = new Map();
 
-// ── Tab-level CDN bridge result listener registration ─────────────────────
-// We register a one-time message listener per request inside handleRefreshCdnUrl.
-
-/**
- * Called by background.js message router for action "refreshCdnUrl".
- * @param {{canonicalUrl: string}} request
- * @param {chrome.runtime.MessageSender} sender
- * @param {function} sendResponse
- * @returns {true}  (async response)
- */
 function handleRefreshCdnUrl(request, sender, sendResponse) {
-  const canonicalUrl = (request.canonicalUrl || '').split('?')[0];
+  const rawUrl = request.canonicalUrl || request.tiktokUrl || '';
+  const canonicalUrl = rawUrl.split('?')[0];
+
   if (!canonicalUrl || !canonicalUrl.includes('/video/')) {
-    sendResponse({ ok: false, error: 'Invalid canonical URL' });
+    sendResponse({ ok: false, error: 'Invalid canonical TikTok video URL' });
     return true;
   }
 
-  // Deduplicate: if already fetching this URL, piggyback on existing promise
+  const idMatch = canonicalUrl.match(/\/video\/(\d+)/);
+  const videoId = idMatch ? idMatch[1] : '';
+
   if (_inflightRefreshes.has(canonicalUrl)) {
-    const existing = _inflightRefreshes.get(canonicalUrl);
-    // Chain a secondary resolve once existing resolves
-    const origResolve = existing.resolve;
-    existing.resolve = (result) => {
-      origResolve(result);
-      sendResponse(result);
-    };
+    _inflightRefreshes.get(canonicalUrl).push(sendResponse);
     return true;
   }
 
-  // Start refresh pipeline
-  const timeoutMs = 12000;
-  let timeoutId;
+  const callbacks = [sendResponse];
+  _inflightRefreshes.set(canonicalUrl, callbacks);
 
-  const promise = new Promise(async (resolve) => {
-    timeoutId = setTimeout(() => {
-      _inflightRefreshes.delete(canonicalUrl);
-      resolve({ ok: false, error: 'CDN refresh timed out after 12s' });
-    }, timeoutMs);
-
-    try {
-      const result = await _doRefresh(canonicalUrl);
-      clearTimeout(timeoutId);
-      _inflightRefreshes.delete(canonicalUrl);
-      resolve(result);
-    } catch (err) {
-      clearTimeout(timeoutId);
-      _inflightRefreshes.delete(canonicalUrl);
-      resolve({ ok: false, error: err.message });
-    }
-  });
-
-  _inflightRefreshes.set(canonicalUrl, {
-    resolve: (result) => sendResponse(result),
-    timeoutId,
-  });
-
-  promise.then((result) => {
-    const entry = _inflightRefreshes.get(canonicalUrl);
-    if (entry) {
-      entry.resolve(result);
-      _inflightRefreshes.delete(canonicalUrl);
-    }
-    sendResponse(result);
-  });
-
-  return true; // keep message channel open for async
-}
-
-/**
- * Internal: navigate/reuse TikTok tab to the video URL, inject bridge, await result.
- * @param {string} canonicalUrl
- * @returns {Promise<{ok: boolean, cdnUrl?: string, error?: string}>}
- */
-async function _doRefresh(canonicalUrl) {
-  // 1. Find existing TikTok tab (prefer one already on the target video)
-  let tab = await _findBestTikTokTab(canonicalUrl);
-
-  let didNavigate = false;
-
-  if (!tab) {
-    // Create a new background tab (not active — don't disrupt user's view)
-    tab = await chrome.tabs.create({ url: canonicalUrl, active: false });
-    didNavigate = true;
-    console.log('[BG-PLAYER] [CDN] Created background tab', tab.id, 'for', canonicalUrl);
-  } else if (!_tabIsOnTargetVideo(tab.url, canonicalUrl)) {
-    // Navigate existing tab to the video; use SPA message first
-    try {
-      await chrome.tabs.sendMessage(tab.id, { action: 'navigateToVideo', url: canonicalUrl });
-      didNavigate = true;
-    } catch (_) {
-      await chrome.tabs.update(tab.id, { url: canonicalUrl });
-      didNavigate = true;
-    }
-    console.log('[BG-PLAYER] [CDN] Navigated tab', tab.id, 'to', canonicalUrl);
-  }
-
-  // 2. Wait for tab to finish loading if we navigated
-  if (didNavigate) {
-    await _waitForTabLoad(tab.id, 7000);
-  }
-
-  // 3. Inject content-cdn-bridge.js programmatically
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['js/content/content-cdn-bridge.js'],
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    abortController.abort();
+    const list = _inflightRefreshes.get(canonicalUrl) || [];
+    _inflightRefreshes.delete(canonicalUrl);
+    list.forEach(cb => {
+      try { cb({ ok: false, error: 'Stream fetch timed out after 12s' }); } catch (_) {}
     });
-  } catch (err) {
-    console.warn('[BG-PLAYER] [CDN] Script inject failed on tab', tab.id, ':', err.message);
-    return { ok: false, error: 'Script injection failed: ' + err.message };
+  }, 12000);
+
+  (async () => {
+    try {
+      const fastResult = await _fetchTikwmStream(canonicalUrl);
+      if (fastResult && fastResult.ok && fastResult.cdnUrl) {
+        return fastResult;
+      }
+      return await _doSilentFetch(canonicalUrl, videoId, abortController.signal);
+    } catch (err) {
+      return { ok: false, error: err.message || 'Stream fetch failed' };
+    }
+  })().then((result) => {
+    clearTimeout(timeoutId);
+    const list = _inflightRefreshes.get(canonicalUrl) || [];
+    _inflightRefreshes.delete(canonicalUrl);
+    list.forEach(cb => {
+      try { cb(result); } catch (_) {}
+    });
+  });
+
+  return true;
+}
+
+async function _fetchTikwmStream(canonicalUrl) {
+  try {
+    const body = new URLSearchParams({ url: canonicalUrl, hd: '1' });
+    const res = await fetch('https://tikwm.com/api/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (json.code !== 0 || !json.data) return null;
+    const cdnUrl = json.data.play || json.data.hdplay || (typeof json.data.music === 'string' ? json.data.music : null);
+    if (!cdnUrl) return null;
+    return { ok: true, cdnUrl, title: json.data.title, cover: json.data.cover };
+  } catch (_) {
+    return null;
+  }
+}
+
+const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+const DNR_RULE_ID = 99001;
+const CORS_RULE_ID = 99002;
+
+async function _applyPlayerCorsRule() {
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [CORS_RULE_ID],
+      addRules: [{
+        id: CORS_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          responseHeaders: [
+            { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
+            { header: 'Access-Control-Allow-Methods', operation: 'set', value: 'GET, HEAD, OPTIONS' },
+            { header: 'Access-Control-Allow-Headers', operation: 'set', value: '*' },
+            { header: 'Access-Control-Expose-Headers', operation: 'set', value: 'Content-Length, Content-Range, Accept-Ranges' },
+          ],
+        },
+        condition: {
+          initiatorDomains: [chrome.runtime.id],
+          excludedInitiatorDomains: ['tiktok.com', 'www.tiktok.com'],
+          resourceTypes: ['media', 'xmlhttprequest', 'other'],
+        },
+      }],
+    });
+  } catch (e) {
+    console.warn('[BG-PLAYER] Failed to apply Player CORS rule:', e.message);
+  }
+}
+
+_applyPlayerCorsRule();
+
+async function _applyMobileUaRule() {
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [DNR_RULE_ID],
+      addRules: [{
+        id: DNR_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [{
+            header: 'User-Agent',
+            operation: 'set',
+            value: MOBILE_UA,
+          }],
+        },
+        condition: {
+          urlFilter: '||www.tiktok.com',
+          initiatorDomains: [chrome.runtime.id],
+          excludedInitiatorDomains: ['tiktok.com', 'www.tiktok.com'],
+          resourceTypes: ['xmlhttprequest', 'other'],
+        },
+      }],
+    });
+  } catch (e) {
+    console.warn('[BG-PLAYER] Failed to apply mobile UA rule:', e.message);
+  }
+}
+
+async function _removeMobileUaRule() {
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [DNR_RULE_ID],
+    });
+  } catch (_) {}
+}
+
+async function _doSilentFetch(canonicalUrl, videoId, signal) {
+  const maxRetries = 2;
+  let lastError = '';
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = 4000 + Math.random() * 2000;
+      await new Promise(r => setTimeout(r, delay));
+    }
+
+    await _applyMobileUaRule();
+
+    try {
+      const response = await fetch(canonicalUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+        },
+        credentials: 'omit',
+        signal,
+      });
+
+      await _removeMobileUaRule();
+
+      if (response.status === 403) {
+        lastError = 'HTTP 403 Forbidden (rate-limited)';
+        continue;
+      }
+
+      if (!response.ok) {
+        return { ok: false, error: `HTTP ${response.status} ${response.statusText}` };
+      }
+
+      const html = await response.text();
+      const cdnUrl = _extractCdnFromHtml(html, videoId);
+
+      if (cdnUrl) {
+        return { ok: true, cdnUrl };
+      }
+
+      return { ok: false, error: 'Could not extract CDN stream URL from TikTok HTML' };
+    } catch (err) {
+      await _removeMobileUaRule();
+      throw err;
+    }
   }
 
-  // 4. Wait for cdnBridgeResult message from that tab
-  const cdnUrl = await _waitForBridgeResult(tab.id, 9000);
+  return { ok: false, error: lastError || 'All retries exhausted' };
+}
 
-  if (cdnUrl) {
-    console.log('[BG-PLAYER] [CDN] Got CDN URL for', canonicalUrl, '→', cdnUrl.substring(0, 60) + '...');
-    return { ok: true, cdnUrl };
+function _extractCdnFromHtml(html, videoId) {
+  if (!html || typeof html !== 'string') return null;
+
+  const cleanUrl = (raw) => {
+    if (!raw || typeof raw !== 'string') return null;
+    let url = raw.replace(/\\u002F/g, '/').replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+    try {
+      url = JSON.parse(`"${raw}"`);
+    } catch (_) { }
+    url = url.replace(/\\u002F/g, '/').replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+    if (url.startsWith('//')) url = 'https:' + url;
+    return (url.startsWith('http://') || url.startsWith('https://')) ? url : null;
+  };
+
+  const apiDataMatch = html.match(/<script\s+id="api-data"\s+type="application\/json">([\s\S]*?)<\/script>/i);
+  if (apiDataMatch && apiDataMatch[1]) {
+    try {
+      const data = JSON.parse(apiDataMatch[1]);
+      const itemStruct = data.videoDetail?.itemInfo?.itemStruct;
+      const playAddr = itemStruct?.video?.playAddr || itemStruct?.video?.downloadAddr || itemStruct?.music?.playUrl;
+      const cleaned = cleanUrl(playAddr);
+      if (cleaned) return cleaned;
+
+      const bitrateList = itemStruct?.video?.bitrateInfo;
+      if (Array.isArray(bitrateList) && bitrateList.length > 0) {
+        const bestUrl = bitrateList[0]?.PlayAddr?.UrlList?.[0];
+        const cleanedBitrate = cleanUrl(bestUrl);
+        if (cleanedBitrate) return cleanedBitrate;
+      }
+    } catch (_) {}
   }
 
-  return { ok: false, error: 'Bridge did not return a CDN URL within timeout' };
-}
+  const rehydrationMatch = html.match(/<script\s+id="__UNIVERSAL_DATA_FOR_REHYDRATION__"\s+type="application\/json">([\s\S]*?)<\/script>/i);
+  if (rehydrationMatch && rehydrationMatch[1]) {
+    try {
+      const data = JSON.parse(rehydrationMatch[1]);
+      const defaultScope = data.__DEFAULT_SCOPE__ || data;
+      const videoDetail = defaultScope['webapp.video-detail'] || defaultScope['videoDetail'];
+      const itemStruct = videoDetail?.itemInfo?.itemStruct;
 
-/**
- * Find the best available TikTok tab for CDN extraction.
- * Priority: tab already on the exact canonical URL > any tiktok.com tab.
- */
-async function _findBestTikTokTab(canonicalUrl) {
-  const all = await chrome.tabs.query({ url: '*://*.tiktok.com/*' });
-  if (!all.length) return null;
-  const exact = all.find(t => _tabIsOnTargetVideo(t.url, canonicalUrl));
-  return exact || all[0];
-}
+      const playAddr = itemStruct?.video?.playAddr || itemStruct?.video?.downloadAddr || itemStruct?.music?.playUrl;
+      const cleaned = cleanUrl(playAddr);
+      if (cleaned) return cleaned;
 
-function _tabIsOnTargetVideo(tabUrl, canonicalUrl) {
-  if (!tabUrl || !canonicalUrl) return false;
-  const id = canonicalUrl.match(/\/video\/(\d+)/)?.[1];
-  return id ? tabUrl.includes(id) : false;
-}
-
-/** Wait until a tab's status becomes 'complete' or timeout. */
-function _waitForTabLoad(tabId, maxMs) {
-  return new Promise((resolve) => {
-    const deadline = Date.now() + maxMs;
-
-    function onUpdated(id, info) {
-      if (id === tabId && info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(onUpdated);
-        resolve();
+      const bitrateList = itemStruct?.video?.bitrateInfo;
+      if (Array.isArray(bitrateList) && bitrateList.length > 0) {
+        const bestUrl = bitrateList[0]?.PlayAddr?.UrlList?.[0];
+        const cleanedBitrate = cleanUrl(bestUrl);
+        if (cleanedBitrate) return cleanedBitrate;
       }
-    }
-    chrome.tabs.onUpdated.addListener(onUpdated);
+    } catch (_) {}
+  }
 
-    // Fallback: resolve after maxMs anyway
-    setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      resolve();
-    }, maxMs);
-
-    // Also check immediately if already loaded
-    chrome.tabs.get(tabId).then(tab => {
-      if (tab && tab.status === 'complete' && Date.now() < deadline) {
-        chrome.tabs.onUpdated.removeListener(onUpdated);
-        resolve();
+  const sigiMatch = html.match(/<script\s+id="SIGI_STATE"\s+type="application\/json">([\s\S]*?)<\/script>/i);
+  if (sigiMatch && sigiMatch[1]) {
+    try {
+      const data = JSON.parse(sigiMatch[1]);
+      const itemModule = data.ItemModule;
+      if (itemModule) {
+        const item = videoId && itemModule[videoId] ? itemModule[videoId] : Object.values(itemModule)[0];
+        const playAddr = item?.video?.playAddr || item?.video?.downloadAddr || item?.music?.playUrl;
+        const cleaned = cleanUrl(playAddr);
+        if (cleaned) return cleaned;
       }
-    }).catch(() => resolve());
-  });
-}
+    } catch (_) {}
+  }
 
-/**
- * Wait for the content bridge on tabId to POST back a cdnBridgeResult message.
- * Returns the cdnUrl string, or null if timeout.
- */
-function _waitForBridgeResult(tabId, maxMs) {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      chrome.runtime.onMessage.removeListener(onMsg);
-      resolve(null);
-    }, maxMs);
+  const playAddrMatch = html.match(/"playAddr":\s*"([^"]+)"/i) ||
+    html.match(/"playUrl":\s*"([^"]+)"/i) ||
+    html.match(/"downloadAddr":\s*"([^"]+)"/i);
+  if (playAddrMatch && playAddrMatch[1]) {
+    const cleaned = cleanUrl(playAddrMatch[1]);
+    if (cleaned) return cleaned;
+  }
 
-    function onMsg(msg, sender) {
-      if (
-        msg.action === 'cdnBridgeResult' &&
-        sender.tab && sender.tab.id === tabId
-      ) {
-        clearTimeout(timer);
-        chrome.runtime.onMessage.removeListener(onMsg);
-        resolve(msg.cdnUrl || null);
-      }
-    }
-    chrome.runtime.onMessage.addListener(onMsg);
-  });
+  return null;
 }

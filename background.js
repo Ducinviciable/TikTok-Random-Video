@@ -132,11 +132,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       handleSetAutoNext(request.enabled).then(sendResponse);
       return true;
 
-    // ── Dedicated Player: JIT CDN Refresher ──────────────────────────
     case "refreshCdnUrl":
+    case "GET_STREAM_URL":
       return handleRefreshCdnUrl(request, sender, sendResponse);
 
-    // ── Dedicated Player: Open Player Tab ────────────────────────────
     case "openPlayerTab": {
       const playerUrl = chrome.runtime.getURL("player.html");
       chrome.tabs.query({ url: playerUrl }, (tabs) => {

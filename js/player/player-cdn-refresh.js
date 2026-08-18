@@ -1,11 +1,17 @@
-// JIT CDN Refresher: Lấy stream URL mới qua background bridge và cache trong bộ nhớ (15p)
 'use strict';
 
 (function () {
   const CDN_CACHE_TTL_MS = 15 * 60 * 1000;
   const cdnCache = new Map();
+  const prefetchingUrls = new Set();
 
-  // Lấy stream URL mới cho video TikTok
+  function hasCached(canonicalUrl) {
+    if (!canonicalUrl) return false;
+    const key = canonicalUrl.split('?')[0];
+    const cached = cdnCache.get(key);
+    return !!(cached && (Date.now() - cached.fetchedAt) < CDN_CACHE_TTL_MS);
+  }
+
   async function refreshCdnUrl(canonicalUrl) {
     if (!canonicalUrl) return { ok: false, error: 'No canonical URL provided' };
     const key = canonicalUrl.split('?')[0];
@@ -25,16 +31,14 @@
         { action: 'refreshCdnUrl', canonicalUrl: key },
         (response) => {
           if (chrome.runtime.lastError) {
-            console.warn('[CDN] sendMessage error:', chrome.runtime.lastError.message);
             resolve({ ok: false, error: chrome.runtime.lastError.message });
             return;
           }
           if (response && response.ok && response.cdnUrl) {
-            cdnCache.set(key, { cdnUrl: response.cdnUrl, fetchedAt: Date.now() });
-            resolve({ ok: true, cdnUrl: response.cdnUrl });
+            cdnCache.set(key, { cdnUrl: response.cdnUrl, cover: response.cover, fetchedAt: Date.now() });
+            resolve({ ok: true, cdnUrl: response.cdnUrl, cover: response.cover });
           } else {
             const err = (response && response.error) || 'Unknown error';
-            console.warn('[CDN] Refresh failed for', key, ':', err);
             resolve({ ok: false, error: err });
           }
         }
@@ -42,7 +46,21 @@
     });
   }
 
-  // Xóa cache khi gặp lỗi 403 hoặc stream hỏng
+  async function prefetchTracks(urls) {
+    if (!Array.isArray(urls)) return;
+    for (const rawUrl of urls) {
+      if (!rawUrl) continue;
+      const key = rawUrl.split('?')[0];
+      if (hasCached(key) || prefetchingUrls.has(key)) continue;
+
+      prefetchingUrls.add(key);
+      refreshCdnUrl(key).finally(() => {
+        prefetchingUrls.delete(key);
+      });
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+
   function invalidateCdnCache(canonicalUrl) {
     const key = (canonicalUrl || '').split('?')[0];
     if (cdnCache.has(key)) {
@@ -50,5 +68,5 @@
     }
   }
 
-  window.PlayerCDN = { refreshCdnUrl, invalidateCdnCache };
+  window.PlayerCDN = { refreshCdnUrl, prefetchTracks, hasCached, invalidateCdnCache };
 })();

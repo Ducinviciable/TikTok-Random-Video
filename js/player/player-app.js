@@ -1,4 +1,3 @@
-// TikTok Hi-Fi Player: Queue, UI State, JSON Backup Import, Storage Sync & Shortcuts
 'use strict';
 
 const EQ_PRESETS = window.PlayerAudio ? PlayerAudio.EQ_PRESETS : {
@@ -11,7 +10,6 @@ const EQ_PRESETS = window.PlayerAudio ? PlayerAudio.EQ_PRESETS : {
 const EQ_BANDS = ['32Hz','64Hz','125Hz','250Hz','500Hz','1kHz','2kHz','4kHz','8kHz','16kHz'];
 const BG_CLASSES = ['bg-a','bg-b','bg-c','bg-d','bg-e'];
 
-// Trạng thái ứng dụng
 const state = {
   tracks: [],
   blacklisted: new Set(),
@@ -43,6 +41,9 @@ const dom = {
   vinylEl:        $('vinyl-el'),
   vinylName:      $('vinyl-name'),
   playBtn:        $('play-btn'),
+  btnPrev:        $('btn-prev'),
+  btnNext:        $('btn-next'),
+  btnBan:         $('btn-ban'),
   timelineFill:   $('timeline-fill'),
   timeCurrent:    $('time-current'),
   timeTotal:      $('time-total'),
@@ -58,6 +59,7 @@ const dom = {
   eqSliders:      $('eq-sliders'),
   toastEl:        $('toast'),
   toastMsg:       $('toast-msg'),
+  toastClose:     $('toast-close'),
   eqPreset:       $('eq-preset'),
   bassRange:      $('bass-range'),
   bassLabel:      $('bass-label'),
@@ -69,15 +71,16 @@ const dom = {
   btnSpectrum:    $('btn-spectrum'),
   visualizerArea: $('visualizer-area'),
   normalizerBtn:  $('normalizer-btn'),
+  tabPlaylist:    $('tab-playlist'),
+  tabOffline:     $('tab-offline'),
 };
 
-// Đọc và chuyển đổi dữ liệu backup JSON từ extension
 function parseExtensionBackup(data) {
   if (!data || !Array.isArray(data.likedVideos)) {
     throw new Error('File JSON không hợp lệ: thiếu mảng likedVideos');
   }
 
-  const blacklistUrls = new Set((data.blacklistedVideos || []).map(u => u.split('?')[0]));
+  const blacklistUrls = new Set((data.blacklistedVideos || []).map(u => (typeof u === 'string' ? u.split('?')[0] : '')));
 
   const tracks = data.likedVideos
     .filter(item => {
@@ -89,14 +92,15 @@ function parseExtensionBackup(data) {
       const canonicalUrl = rawUrl.split('?')[0];
       const thumb = typeof item === 'object' ? (item.thumb || '') : '';
 
-      const idMatch = canonicalUrl.match(/\/video\/(\d+)/);
-      const userMatch = canonicalUrl.match(/@([^/?#]+)/);
+      const match = canonicalUrl.match(/https:\/\/www\.tiktok\.com\/@([^/]+)\/video\/(\d+)/);
+      const username = match ? `@${match[1]}` : (canonicalUrl.match(/@([^/?#]+)/) ? `@${canonicalUrl.match(/@([^/?#]+)/)[1]}` : '@tiktok');
+      const videoId = match ? match[2] : (canonicalUrl.match(/\/video\/(\d+)/) ? canonicalUrl.match(/\/video\/(\d+)/)[1] : `vid_${index}`);
 
       return {
-        id: idMatch ? idMatch[1] : `vid_${index}`,
+        id: videoId,
         canonicalUrl,
         thumb,
-        username: userMatch ? `@${userMatch[1]}` : '@tiktok',
+        username,
         title: `TikTok Video #${index + 1}`,
         bgClass: BG_CLASSES[index % BG_CLASSES.length],
       };
@@ -105,7 +109,6 @@ function parseExtensionBackup(data) {
   return { tracks, bannedCount: blacklistUrls.size };
 }
 
-// Nạp danh sách bài hát vào bộ nhớ
 function loadTracks(data, source) {
   try {
     const { tracks, bannedCount } = parseExtensionBackup(data);
@@ -123,6 +126,10 @@ function loadTracks(data, source) {
 
     if (tracks.length > 0) {
       highlightTrack(tracks[0].id);
+      if (window.PlayerCDN) {
+        const initialUrls = tracks.slice(0, 4).map(t => t.canonicalUrl);
+        PlayerCDN.prefetchTracks(initialUrls);
+      }
     }
   } catch (err) {
     showToast('❌ ' + err.message);
@@ -130,7 +137,6 @@ function loadTracks(data, source) {
   }
 }
 
-// Cập nhật danh sách phát và thống kê
 function refreshUI() {
   const query = dom.searchInput ? dom.searchInput.value.toLowerCase() : '';
   const visible = state.tracks.filter(t =>
@@ -172,12 +178,8 @@ function refreshUI() {
 
     div.innerHTML = `
       <div class="thumbnail ${track.bgClass}">
-        ${track.thumb
-          ? `<img src="${track.thumb}" alt="" loading="lazy" onerror="this.hidden=true">`
-          : ''
-        }
         <div class="thumbnail-fallback" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <polygon points="5 3 19 12 5 21 5 3"/>
           </svg>
         </div>
@@ -187,8 +189,7 @@ function refreshUI() {
         <strong>${escHtml(track.username)}</strong>
         <span title="${escHtml(track.title)}">${escHtml(track.title)}</span>
         <div class="track-actions">
-          <button class="mini-action"
-            onclick="event.stopPropagation(); saveOffline('${track.id}')"
+          <button class="mini-action action-save"
             ${isOffline ? 'disabled aria-disabled="true"' : ''}
             aria-label="Tải offline ${escHtml(track.username)}">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -197,8 +198,7 @@ function refreshUI() {
             </svg>
             ${isOffline ? 'Offline' : 'Save'}
           </button>
-          <button class="mini-action danger"
-            onclick="event.stopPropagation(); banTrack('${track.id}')"
+          <button class="mini-action danger action-ban"
             aria-label="Cấm video ${escHtml(track.username)}">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"/>
@@ -211,6 +211,35 @@ function refreshUI() {
       ${isOffline ? '<span class="offline-dot" aria-label="Có sẵn offline"></span>' : ''}
     `;
 
+    const thumbBox = div.querySelector('.thumbnail');
+    if (track.thumb && thumbBox) {
+      const img = document.createElement('img');
+      img.alt = track.username;
+      img.referrerPolicy = 'no-referrer';
+      img.style.opacity = '0';
+      img.style.transition = 'opacity 0.25s ease';
+      img.onload = () => { img.style.opacity = '1'; };
+      img.onerror = () => { img.remove(); };
+      img.src = track.thumb;
+      thumbBox.appendChild(img);
+    }
+
+    const btnSave = div.querySelector('.action-save');
+    if (btnSave) {
+      btnSave.addEventListener('click', (e) => {
+        e.stopPropagation();
+        saveOffline(track.id);
+      });
+    }
+
+    const btnBan = div.querySelector('.action-ban');
+    if (btnBan) {
+      btnBan.addEventListener('click', (e) => {
+        e.stopPropagation();
+        banTrack(track.id);
+      });
+    }
+
     div.addEventListener('click', () => selectAndPlay(track.id));
     div.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAndPlay(track.id); }
@@ -220,7 +249,6 @@ function refreshUI() {
   });
 }
 
-// Cập nhật thông tin hiển thị của bài hát (sân khấu, đĩa than, media bar)
 function highlightTrack(id) {
   const track = state.tracks.find(t => t.id === id);
   if (!track) return;
@@ -233,36 +261,43 @@ function highlightTrack(id) {
     dom.originalLink.hidden = false;
   }
 
-  // Thumbnail trên nhãn đĩa than (hoặc fallback mặc định)
   const vinylThumb = document.getElementById('vinyl-thumb');
   const vinylFallback = document.getElementById('vinyl-fallback');
-  if (track.thumb) {
-    if (vinylThumb) {
+  if (vinylThumb && vinylFallback) {
+    vinylThumb.style.opacity = '0';
+    vinylThumb.referrerPolicy = 'no-referrer';
+    if (track.thumb) {
+      vinylThumb.onload = () => {
+        vinylThumb.style.opacity = '1';
+        vinylFallback.style.display = 'none';
+      };
+      vinylThumb.onerror = () => {
+        vinylThumb.style.opacity = '0';
+        vinylFallback.style.display = 'flex';
+      };
       vinylThumb.src = track.thumb;
-      vinylThumb.alt = track.username;
-      vinylThumb.hidden = false;
-    }
-    if (vinylFallback) vinylFallback.hidden = true;
-  } else {
-    if (vinylThumb) vinylThumb.hidden = true;
-    if (vinylFallback) {
-      vinylFallback.hidden = false;
-      if (dom.vinylName) dom.vinylName.textContent = track.username.slice(1, 7).toUpperCase() || 'TIKTOK';
+    } else {
+      vinylFallback.style.display = 'flex';
     }
   }
 
-  // Thanh điều khiển dưới đáy
   if (dom.nowBarTitle)   dom.nowBarTitle.textContent   = track.username;
   if (dom.nowBarCreator) dom.nowBarCreator.textContent = track.title;
 
   if (dom.nowThumb && dom.nowThumbImg) {
+    dom.nowThumbImg.style.opacity = '0';
+    dom.nowThumbImg.referrerPolicy = 'no-referrer';
     if (track.thumb) {
-      dom.nowThumbImg.src   = track.thumb;
-      dom.nowThumbImg.alt   = track.username;
-      dom.nowThumbImg.hidden = false;
-      dom.nowThumb.className = 'now-thumb';
+      dom.nowThumbImg.onload = () => {
+        dom.nowThumbImg.style.opacity = '1';
+        dom.nowThumb.className = 'now-thumb';
+      };
+      dom.nowThumbImg.onerror = () => {
+        dom.nowThumbImg.style.opacity = '0';
+        dom.nowThumb.className = `now-thumb ${track.bgClass}`;
+      };
+      dom.nowThumbImg.src = track.thumb;
     } else {
-      dom.nowThumbImg.hidden = true;
       dom.nowThumb.className = `now-thumb ${track.bgClass}`;
     }
   }
@@ -278,33 +313,71 @@ async function selectAndPlay(id) {
   await startPlayback(track);
 }
 
-// Bắt đầu phát âm thanh qua JIT CDN & DSP Engine
 async function startPlayback(track) {
   state.playing = true;
   state.activeId = track.id;
 
   resumePlayState();
 
-  showToast(`⚡ Đang nạp âm thanh Hi-Fi: ${track.username}...`);
+  const isCached = window.PlayerCDN ? PlayerCDN.hasCached(track.canonicalUrl) : false;
+  if (!isCached) {
+    showToast(`⚡ Đang nạp âm thanh: ${track.username}...`);
+  }
+
+  console.log('[APP] Fetching stream for:', track.username, track.canonicalUrl);
   let cdnResult = { ok: false };
   if (window.PlayerCDN) {
     cdnResult = await PlayerCDN.refreshCdnUrl(track.canonicalUrl);
   }
+  console.log('[APP] CDN Result for', track.username, ':', cdnResult);
 
   if (cdnResult && cdnResult.ok && cdnResult.cdnUrl) {
+    if (cdnResult.cover && !track.thumb) {
+      track.thumb = cdnResult.cover;
+      highlightTrack(track.id);
+    }
     if (window.PlayerAudio) {
       const ok = await PlayerAudio.playTrack(cdnResult.cdnUrl, track);
       if (ok) {
-        showToast(`🎧 Đang phát Hi-Fi: ${track.username}`);
+        showToast(`🎧 Đang phát: ${track.username}`);
+        triggerNextPreload(track);
       }
     }
   } else {
-    console.warn('[APP] CDN refresh unavailable for:', track.canonicalUrl);
-    showToast(`⚠️ Không thể phát âm thanh của ${track.username}, thử bài kế tiếp`);
-    setTimeout(() => nextTrack(), 1500);
+    if (window.PlayerCDN) {
+      PlayerCDN.invalidateCdnCache(track.canonicalUrl);
+    }
+    console.warn('[APP] CDN refresh unavailable for:', track.canonicalUrl, cdnResult ? cdnResult.error : '');
+    showToast(`⚠️ Không thể phát video của ${track.username}, thử bài kế tiếp`);
+    setTimeout(() => nextTrack(), 1200);
   }
 
   updateMediaSession(track);
+}
+
+function triggerNextPreload(currentTrack) {
+  const nextTrackObj = getNextTrackToPlay();
+  if (!nextTrackObj || !window.PlayerCDN) return;
+
+  const visible = visibleTracks();
+  const curIdx = visible.findIndex(t => t.id === currentTrack.id);
+  const upcomingUrls = [];
+  for (let i = 1; i <= 3; i++) {
+    const u = visible[(curIdx + i) % visible.length];
+    if (u) upcomingUrls.push(u.canonicalUrl);
+  }
+  PlayerCDN.prefetchTracks(upcomingUrls);
+
+  PlayerCDN.refreshCdnUrl(nextTrackObj.canonicalUrl).then(res => {
+    if (res && res.ok) {
+      if (res.cover && !nextTrackObj.thumb) {
+        nextTrackObj.thumb = res.cover;
+      }
+      if (res.cdnUrl && window.PlayerAudio) {
+        PlayerAudio.preloadTrack(res.cdnUrl, nextTrackObj);
+      }
+    }
+  });
 }
 
 function getNextTrackToPlay() {
@@ -332,7 +405,6 @@ function handleTrackEnded() {
   nextTrack();
 }
 
-// Đồng bộ Media Session API với hệ điều hành
 function updateMediaSession(track) {
   if (!('mediaSession' in navigator)) return;
   navigator.mediaSession.metadata = new MediaMetadata({
@@ -347,10 +419,15 @@ function updateMediaSession(track) {
 }
 
 function togglePlay() {
-  if (!state.activeId && state.tracks.length > 0) {
-    selectAndPlay(state.tracks[0].id);
+  if (state.tracks.length === 0) return;
+
+  const currentAudioTrack = window.PlayerAudio ? PlayerAudio.getActiveTrack() : null;
+  if (!currentAudioTrack) {
+    const targetId = state.activeId || state.tracks[0].id;
+    selectAndPlay(targetId);
     return;
   }
+
   if (state.playing) {
     pausePlayState();
     if (window.PlayerAudio) PlayerAudio.pause();
@@ -455,7 +532,6 @@ function seekTo(val) {
   }
 }
 
-// Chuyển đổi chế độ Visualizer (Vinyl / Spectrum)
 function setMode(mode) {
   state.currentMode = mode;
   const isVinyl = mode === 'vinyl';
@@ -509,34 +585,39 @@ function drawSpectrum() {
   }
 
   const numBars = 32;
-  const bw = w / 36;
+  const barWidth = 8 * 2;
+  const barGap = 5 * 2;
+  const totalBarsWidth = numBars * barWidth + (numBars - 1) * barGap;
+  const startX = Math.max(0, (w - totalBarsWidth) / 2);
 
   for (let i = 0; i < numBars; i++) {
-    let wave = 0.08;
+    let wave = 0.06;
     if (freqData && freqData.length > 0 && state.playing) {
-      const binIdx = Math.floor((i / numBars) * (freqData.length * 0.7));
+      const binIdx = Math.floor((i / numBars) * (freqData.length * 0.75));
       const rawVal = freqData[binIdx] || 0;
       wave = rawVal / 255;
     } else if (state.playing) {
       wave = Math.abs(Math.sin(Date.now() / 330 + i * 0.7));
     }
 
-    const bh = h * (0.08 + wave * (0.75 + (i % 4) * 0.04));
+    const bh = Math.max(8, h * (0.08 + wave * 0.82));
+    const x = startX + i * (barWidth + barGap);
+    const y = h - bh;
+
     const grad = ctx.createLinearGradient(0, h, 0, 0);
     grad.addColorStop(0, '#a89cf5');
     grad.addColorStop(0.5, '#86ddeb');
     grad.addColorStop(1, '#edb7d6');
     ctx.fillStyle    = grad;
-    ctx.globalAlpha  = 0.85;
+    ctx.globalAlpha  = 0.9;
     ctx.beginPath();
-    ctx.roundRect(i * bw + 6, h - bh, bw - 10, bh, 12);
+    ctx.roundRect(x, y, barWidth, bh, 8);
     ctx.fill();
   }
 
   state.specRAF = requestAnimationFrame(drawSpectrum);
 }
 
-// Xây dựng thanh trượt EQ 10 dải
 function buildEqSliders() {
   if (!dom.eqSliders) return;
   dom.eqSliders.innerHTML = '';
@@ -546,10 +627,13 @@ function buildEqSliders() {
     const band = EQ_BANDS[i];
     label.innerHTML = `
       <input type="range" min="-12" max="12" value="${val}"
-        aria-label="${band} EQ" aria-valuemin="-12" aria-valuemax="12" aria-valuenow="${val}"
-        oninput="updateEqBand(${i}, this.value, this)">
+        aria-label="${band} EQ" aria-valuemin="-12" aria-valuemax="12" aria-valuenow="${val}">
       <span id="eq-val-${i}">${val > 0 ? '+' : ''}${val}</span>
       <small>${['32','64','125','250','500','1k','2k','4k','8k','16k'][i]}</small>`;
+    const input = label.querySelector('input');
+    if (input) {
+      input.addEventListener('input', (e) => updateEqBand(i, e.target.value, e.target));
+    }
     dom.eqSliders.appendChild(label);
   });
 }
@@ -622,7 +706,6 @@ function hideToast() {
   if (dom.toastEl) dom.toastEl.hidden = true;
 }
 
-// Kéo thả và chọn file JSON backup
 function initFileImport() {
   if (!dom.importZone || !dom.fileInput) return;
 
@@ -661,7 +744,6 @@ function readJsonFile(file) {
   reader.readAsText(file);
 }
 
-// Tự động tải danh sách từ chrome.storage
 function tryLoadFromStorage() {
   if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
   chrome.storage.local.get(
@@ -674,7 +756,6 @@ function tryLoadFromStorage() {
   );
 }
 
-// Phím tắt điều khiển
 function initKeyboard() {
   document.addEventListener('keydown', e => {
     const tag = document.activeElement.tagName;
@@ -743,7 +824,27 @@ function escHtml(str) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// Đăng ký sự kiện từ PlayerAudio
+function initUIEventListeners() {
+  if (dom.tabPlaylist) dom.tabPlaylist.addEventListener('click', () => switchTab('playlist'));
+  if (dom.tabOffline)  dom.tabOffline.addEventListener('click', () => switchTab('offline'));
+  if (dom.btnVinyl)    dom.btnVinyl.addEventListener('click', () => setMode('vinyl'));
+  if (dom.btnSpectrum) dom.btnSpectrum.addEventListener('click', () => setMode('spectrum'));
+  if (dom.normalizerBtn) dom.normalizerBtn.addEventListener('click', () => toggleNormalizer(dom.normalizerBtn));
+  if (dom.bassRange) dom.bassRange.addEventListener('input', (e) => updateBass(e.target.value));
+  if (dom.crossfadeRange) dom.crossfadeRange.addEventListener('input', (e) => updateCrossfade(e.target.value));
+  if (dom.eqPreset) dom.eqPreset.addEventListener('change', (e) => applyPreset(e.target.value));
+  if (dom.seekRange) dom.seekRange.addEventListener('input', (e) => seekTo(e.target.value));
+  if (dom.btnShuffle) dom.btnShuffle.addEventListener('click', toggleShuffle);
+  if (dom.btnPrev) dom.btnPrev.addEventListener('click', previousTrack);
+  if (dom.playBtn) dom.playBtn.addEventListener('click', togglePlay);
+  if (dom.btnNext) dom.btnNext.addEventListener('click', nextTrack);
+  if (dom.btnLoop) dom.btnLoop.addEventListener('click', toggleLoop);
+  if (dom.btnBan) dom.btnBan.addEventListener('click', banCurrentTrack);
+  if (dom.volumeRange) dom.volumeRange.addEventListener('input', (e) => updateVolume(e.target.value));
+  if (dom.toastClose) dom.toastClose.addEventListener('click', hideToast);
+  if (dom.searchInput) dom.searchInput.addEventListener('input', refreshUI);
+}
+
 function initAudioEventListeners() {
   if (!window.PlayerAudio) return;
 
@@ -781,12 +882,18 @@ function initAudioEventListeners() {
     handleTrackEnded();
   });
 
-  PlayerAudio.on('error', ({ track }) => {
+  let skipCooldownTimer = null;
+  PlayerAudio.on('error', ({ track, error }) => {
+    console.warn('[APP] PlayerAudio error on track:', track ? track.username : 'unknown', error);
     if (track && window.PlayerCDN) {
       PlayerCDN.invalidateCdnCache(track.canonicalUrl);
     }
-    showToast('⚠️ Lỗi phát stream, tự động thử bài kế tiếp...');
-    setTimeout(() => nextTrack(), 1000);
+    if (skipCooldownTimer) return;
+    skipCooldownTimer = setTimeout(() => {
+      skipCooldownTimer = null;
+      showToast('⚠️ Không thể phát video này, thử bài kế tiếp...');
+      nextTrack();
+    }, 1200);
   });
 }
 
@@ -802,7 +909,7 @@ Object.assign(window, {
 buildEqSliders();
 initFileImport();
 initKeyboard();
+initUIEventListeners();
 initAudioEventListeners();
-if (dom.searchInput) dom.searchInput.addEventListener('input', refreshUI);
 refreshUI();
 tryLoadFromStorage();

@@ -1,20 +1,18 @@
-// Web Audio DSP Engine: Dual-Buffer Crossfade (A/B), 10-Band EQ, Bass Boost, Auto Normalizer, Analyser
 'use strict';
 
 (function () {
   const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
   const EQ_PRESETS = {
-    'Flat':         [ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
-    'Bass Boost':   [ 9,  7,  5,  3,  2,  1,  0,  0, -1, -2],
-    'Vocal':        [-2, -1,  0,  2,  4,  5,  4,  3,  1,  0],
-    'Electronic':   [ 4,  3,  2,  0, -1,  2,  4,  5,  3,  2],
-    'Lofi':         [ 2,  2,  1,  0, -1, -1, -2, -2, -1,  0],
+    'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'Bass Boost': [9, 7, 5, 3, 2, 1, 0, 0, -1, -2],
+    'Vocal': [-2, -1, 0, 2, 4, 5, 4, 3, 1, 0],
+    'Electronic': [4, 3, 2, 0, -1, 2, 4, 5, 3, 2],
+    'Lofi': [2, 2, 1, 0, -1, -1, -2, -2, -1, 0],
   };
 
   let audioCtx = null;
   let isInitialized = false;
 
-  // Dual Player & Gain Nodes
   let playerA = null;
   let playerB = null;
   let sourceA = null;
@@ -22,7 +20,6 @@
   let gainA = null;
   let gainB = null;
 
-  // DSP Pipeline Nodes
   let preMixGain = null;
   let eqFilters = [];
   let bassBoostNode = null;
@@ -33,13 +30,11 @@
   let masterGainNode = null;
   let analyserNode = null;
 
-  // Trạng thái phát
   let activeChannel = 'A';
   let activeTrack = null;
   let preloadedTrack = null;
   let preloadedUrl = null;
 
-  // Cấu hình âm thanh
   let crossfadeDuration = 2.5;
   let bassBoostGain = 6;
   let normalizerEnabled = true;
@@ -70,7 +65,6 @@
     }
   }
 
-  // Khởi tạo AudioContext khi có tương tác người dùng
   function initAudioContext() {
     if (isInitialized && audioCtx) {
       if (audioCtx.state === 'suspended') {
@@ -85,10 +79,16 @@
 
       playerA = new Audio();
       playerB = new Audio();
-      playerA.preload = 'auto';
-      playerB.preload = 'auto';
       playerA.crossOrigin = 'anonymous';
       playerB.crossOrigin = 'anonymous';
+      playerA.preload = 'auto';
+      playerB.preload = 'auto';
+      playerA.referrerPolicy = 'no-referrer';
+      playerB.referrerPolicy = 'no-referrer';
+      playerA.muted = false;
+      playerB.muted = false;
+      playerA.volume = 1.0;
+      playerB.volume = 1.0;
 
       sourceA = audioCtx.createMediaElementSource(playerA);
       sourceB = audioCtx.createMediaElementSource(playerB);
@@ -106,7 +106,6 @@
       gainA.connect(preMixGain);
       gainB.connect(preMixGain);
 
-      // Equalizer 10 dải tần
       eqFilters = EQ_FREQUENCIES.map((freq, idx) => {
         const filter = audioCtx.createBiquadFilter();
         if (idx === 0) {
@@ -128,14 +127,12 @@
         lastNode = filter;
       });
 
-      // Bass Boost Node (LowShelf 100Hz)
       bassBoostNode = audioCtx.createBiquadFilter();
       bassBoostNode.type = 'lowshelf';
       bassBoostNode.frequency.value = 100;
       bassBoostNode.gain.value = bassBoostGain;
       lastNode.connect(bassBoostNode);
 
-      // Volume Normalizer (DynamicsCompressor) & Bypass
       compressorNode = audioCtx.createDynamicsCompressor();
       compressorNode.threshold.value = -24;
       compressorNode.knee.value = 30;
@@ -157,12 +154,10 @@
       bassBoostNode.connect(bypassGain);
       bypassGain.connect(postDSPCrossover);
 
-      // Master Gain Node
       masterGainNode = audioCtx.createGain();
       masterGainNode.gain.value = masterVolume * volumeBooster;
       postDSPCrossover.connect(masterGainNode);
 
-      // AnalyserNode cho Spectrum Visualizer
       analyserNode = audioCtx.createAnalyser();
       analyserNode.fftSize = 128;
       analyserNode.smoothingTimeConstant = 0.8;
@@ -197,7 +192,6 @@
         track: activeTrack,
       });
 
-      // Tự động preload bài kế tiếp ở 85% thời lượng
       if (dur > 6 && !preloadTriggered) {
         const remaining = dur - cur;
         if (pct >= 85 || remaining <= (crossfadeDuration + 2)) {
@@ -206,7 +200,6 @@
         }
       }
 
-      // Kích hoạt crossfade khi gần hết bài
       if (!isCrossfading && preloadedUrl && dur > 6 && (dur - cur) <= crossfadeDuration && crossfadeDuration > 0) {
         performCrossfade();
       }
@@ -223,6 +216,14 @@
     });
 
     player.addEventListener('error', () => {
+      const err = player.error;
+      console.error('[AUDIO] Player Error:', {
+        code: err ? err.code : 'UNKNOWN',
+        message: err ? err.message : '',
+        channel: channelName,
+        src: player.src ? player.src.substring(0, 100) + '...' : 'NONE',
+        track: activeTrack ? activeTrack.username : null,
+      });
       if (channelName === activeChannel) {
         emit('error', { channel: channelName, error: player.error, track: activeTrack });
       }
@@ -237,7 +238,6 @@
     });
   }
 
-  // Phát bài ngay lập tức trên channel đang kích hoạt
   async function playTrack(cdnUrl, track) {
     initAudioContext();
     if (audioCtx.state === 'suspended') {
@@ -248,6 +248,11 @@
       clearTimeout(crossfadeTimer);
       crossfadeTimer = null;
       isCrossfading = false;
+    }
+
+    if (preloadedTrack && preloadedTrack.id === track.id && preloadedUrl) {
+      await performCrossfade();
+      return true;
     }
 
     preloadTriggered = false;
@@ -261,25 +266,30 @@
     try {
       idlePlayer.pause();
       idlePlayer.currentTime = 0;
+      idleGain.gain.cancelScheduledValues(audioCtx.currentTime);
       idleGain.gain.setValueAtTime(0, audioCtx.currentTime);
-    } catch (_) {}
+    } catch (_) { }
 
     preloadedTrack = null;
     preloadedUrl = null;
 
     targetPlayer.src = cdnUrl;
+    targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
     targetGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
 
     try {
+      console.log('[AUDIO] Attempting play on channel', activeChannel, 'URL:', cdnUrl.substring(0, 100));
       await targetPlayer.play();
+      console.log('[AUDIO] Play successful on channel', activeChannel);
+      emit('trackChanged', { track, channel: activeChannel });
       return true;
     } catch (err) {
+      console.error('[AUDIO] play() call rejected:', err);
       emit('error', { channel: activeChannel, error: err, track });
       return false;
     }
   }
 
-  // Nạp trước bài tiếp theo vào channel nhàn rỗi (idle)
   function preloadTrack(cdnUrl, track) {
     initAudioContext();
     if (!cdnUrl || !track) return;
@@ -292,10 +302,10 @@
 
     idlePlayer.src = cdnUrl;
     idlePlayer.load();
+    idleGain.gain.cancelScheduledValues(audioCtx.currentTime);
     idleGain.gain.setValueAtTime(0, audioCtx.currentTime);
   }
 
-  // Chuyển bài mượt mà qua Dual-Buffer Crossfade (A ↔ B)
   async function performCrossfade() {
     if (isCrossfading || !preloadedUrl) return;
     isCrossfading = true;
@@ -306,16 +316,15 @@
     }
 
     const fadeOutPlayer = activeChannel === 'A' ? playerA : playerB;
-    const fadeOutGain   = activeChannel === 'A' ? gainA : gainB;
-    const fadeInPlayer  = activeChannel === 'A' ? playerB : playerA;
-    const fadeInGain    = activeChannel === 'A' ? gainB : gainA;
-    const newChannel    = activeChannel === 'A' ? 'B' : 'A';
-    const newTrack      = preloadedTrack;
+    const fadeOutGain = activeChannel === 'A' ? gainA : gainB;
+    const fadeInPlayer = activeChannel === 'A' ? playerB : playerA;
+    const fadeInGain = activeChannel === 'A' ? gainB : gainA;
+    const newChannel = activeChannel === 'A' ? 'B' : 'A';
+    const newTrack = preloadedTrack;
 
     const now = audioCtx.currentTime;
     const duration = Math.max(0.1, crossfadeDuration);
 
-    // Tăng âm lượng bài mới (0.001 -> 1.0)
     fadeInGain.gain.cancelScheduledValues(now);
     fadeInGain.gain.setValueAtTime(0.001, now);
     fadeInGain.gain.linearRampToValueAtTime(1.0, now + duration);
@@ -326,7 +335,6 @@
       console.warn('[AUDIO] fadeInPlayer play error:', err);
     }
 
-    // Giảm âm lượng bài cũ (1.0 -> 0.001)
     fadeOutGain.gain.cancelScheduledValues(now);
     fadeOutGain.gain.setValueAtTime(fadeOutGain.gain.value, now);
     fadeOutGain.gain.linearRampToValueAtTime(0.001, now + duration);
@@ -344,7 +352,7 @@
         fadeOutPlayer.pause();
         fadeOutPlayer.currentTime = 0;
         fadeOutGain.gain.setValueAtTime(0, audioCtx.currentTime);
-      } catch (_) {}
+      } catch (_) { }
       isCrossfading = false;
       crossfadeTimer = null;
     }, duration * 1000 + 100);
