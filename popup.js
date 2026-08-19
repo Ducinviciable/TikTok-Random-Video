@@ -1,3 +1,22 @@
+// Dedicated Player button click handler
+if (openPlayerBtn) {
+  openPlayerBtn.addEventListener("click", async () => {
+    setLoading(true);
+    statusEl.textContent = "🎧 Đang mở TikTok Hi-Fi Studio...";
+    statusEl.className = "status loading";
+
+    const response = await sendMsg({ action: "openPlayerTab" });
+    if (response && response.ok) {
+      statusEl.textContent = "✨ Đã mở TikTok Hi-Fi Studio!";
+      statusEl.className = "status success";
+    } else {
+      statusEl.textContent = "⚠️ Không thể mở tab Player.";
+      statusEl.className = "status error";
+    }
+    setLoading(false);
+  });
+}
+
 // Random button click handler
 randomBtn.addEventListener("click", async () => {
   setLoading(true);

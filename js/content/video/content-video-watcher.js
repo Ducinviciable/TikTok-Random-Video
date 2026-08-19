@@ -54,10 +54,10 @@ function watchForVideoElement() {
   // Force aggressive buffering + immediate playback attempt
   currentVideoElement.setAttribute("preload", "auto");
   currentVideoElement.setAttribute("playsinline", "");
-  currentVideoElement.load();
-  try {
-    currentVideoElement.currentTime = 0.05;
-  } catch (e) {}
+  currentVideoElement.muted = false;
+  if (currentVideoElement.volume === 0) {
+    currentVideoElement.volume = 1.0;
+  }
 
   if (typeof logPlaybackDiagnostics === "function") {
     logPlaybackDiagnostics("VIDEO_FOUND", currentVideoElement);
@@ -73,6 +73,24 @@ function watchForVideoElement() {
       })
       .catch(function (err) {
         console.warn("[CS] Autoplay rejected on new video:", err);
+        if (err && err.name === "NotAllowedError" && currentVideoElement) {
+          currentVideoElement.muted = true;
+          currentVideoElement.play().catch(function () {});
+          function unmuteOnInteraction() {
+            if (currentVideoElement) {
+              currentVideoElement.muted = false;
+              if (currentVideoElement.volume === 0) currentVideoElement.volume = 1.0;
+            }
+            window.removeEventListener("click", unmuteOnInteraction, true);
+            window.removeEventListener("keydown", unmuteOnInteraction, true);
+            window.removeEventListener("touchstart", unmuteOnInteraction, true);
+            window.removeEventListener("pointerdown", unmuteOnInteraction, true);
+          }
+          window.addEventListener("click", unmuteOnInteraction, true);
+          window.addEventListener("keydown", unmuteOnInteraction, true);
+          window.addEventListener("touchstart", unmuteOnInteraction, true);
+          window.addEventListener("pointerdown", unmuteOnInteraction, true);
+        }
         if (typeof logPlaybackDiagnostics === "function") {
           logPlaybackDiagnostics("PLAY_REJECTED", currentVideoElement);
         }
@@ -117,17 +135,13 @@ function watchForVideoElement() {
     }
   });
 
-  // Recovery: Re-buffer when network stream stalls in background
+  // Recovery: Re-play when network stream stalls in background
   currentVideoElement.addEventListener("stalled", function () {
     if (
       !playNextRequested &&
       currentVideoElement &&
       !currentVideoElement.ended
     ) {
-      console.log(
-        "[CS] ⚡ stalled event → calling load() + play() to re-buffer",
-      );
-      currentVideoElement.load();
       setTimeout(function () {
         if (
           currentVideoElement &&

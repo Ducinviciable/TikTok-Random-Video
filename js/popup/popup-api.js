@@ -1,6 +1,7 @@
 const statusEl = document.getElementById("status");
 const countEl = document.getElementById("videoCount");
 const cacheTimeEl = document.getElementById("cacheTime");
+const openPlayerBtn = document.getElementById("openPlayerBtn");
 const randomBtn = document.getElementById("randomBtn");
 const skipBtn = document.getElementById("skipBtn");
 const banBtn = document.getElementById("banBtn");
@@ -165,6 +166,7 @@ async function loadAutoNextState() {
 
 // UI buttons state helper
 function setLoading(loading) {
+  if (openPlayerBtn) openPlayerBtn.disabled = loading;
   randomBtn.disabled = loading;
   skipBtn.disabled = loading;
   banBtn.disabled = loading;

@@ -4,6 +4,7 @@ importScripts(
   "js/background/bg-storage.js",
   "js/background/bg-playback.js",
   "js/background/bg-collections.js",
+  "js/background/bg-player.js",
 );
 
 // Central Message Dispatcher
@@ -130,6 +131,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case "setAutoNext":
       handleSetAutoNext(request.enabled).then(sendResponse);
       return true;
+
+    case "refreshCdnUrl":
+    case "GET_STREAM_URL":
+      return handleRefreshCdnUrl(request, sender, sendResponse);
+
+    case "openPlayerTab": {
+      const playerUrl = chrome.runtime.getURL("player.html");
+      chrome.tabs.query({ url: playerUrl }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          chrome.tabs.update(tabs[0].id, { active: true });
+          sendResponse({ ok: true, reused: true });
+        } else {
+          chrome.tabs.create({ url: playerUrl, active: true }, (tab) => {
+            sendResponse({ ok: true, tabId: tab.id });
+          });
+        }
+      });
+      return true;
+    }
   }
 });
 

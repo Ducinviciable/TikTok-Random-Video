@@ -165,6 +165,29 @@ button {
     gap: 8px;
 }
 
+#openPlayerBtn {
+    background: linear-gradient(135deg, #7c68ee 0%, #8b9cf6 50%, #5ac8fa 100%);
+    box-shadow: 0 4px 15px rgba(124, 104, 238, 0.4);
+    color: #fff;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+#openPlayerBtn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #8d7cf3 0%, #9baaf8 50%, #72d2fb 100%);
+    box-shadow: 0 6px 20px rgba(124, 104, 238, 0.55);
+    transform: translateY(-1px);
+}
+
+#openPlayerBtn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+#openPlayerBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 #randomBtn {
     background: linear-gradient(135deg, #FF2D55, #e6244a);
     box-shadow: 0 4px 15px rgba(255, 45, 85, 0.3);

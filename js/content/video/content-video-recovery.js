@@ -394,4 +394,11 @@ function checkVideoAudioAndShop() {
     }
     return;
   }
+
+  if (currentVideoElement && currentVideoElement.muted) {
+    currentVideoElement.muted = false;
+    if (currentVideoElement.volume === 0) {
+      currentVideoElement.volume = 1.0;
+    }
+  }
 }
