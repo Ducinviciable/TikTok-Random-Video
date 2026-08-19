@@ -171,10 +171,86 @@
       _attachPlayerListeners(playerB, 'B');
 
       isInitialized = true;
+      _startWatchdog();
       emit('ready');
     } catch (err) {
       console.error('[AUDIO] Init failed:', err);
     }
+  }
+
+  let isUserPaused = false;
+  let watchdogInterval = null;
+  let lastCurrentTime = -1;
+  let stuckSeconds = 0;
+
+  function _startWatchdog() {
+    if (watchdogInterval) clearInterval(watchdogInterval);
+    lastCurrentTime = -1;
+    stuckSeconds = 0;
+
+    watchdogInterval = setInterval(() => {
+      if (!isInitialized || isUserPaused) return;
+      const player = activeChannel === 'A' ? playerA : playerB;
+      if (!player || !player.src || !activeTrack) return;
+
+      const dur = player.duration;
+      const cur = player.currentTime;
+
+      if (!dur || isNaN(dur) || dur <= 0) {
+        stuckSeconds++;
+        if (stuckSeconds === 4) {
+          try { player.play().catch(() => {}); } catch (_) {}
+        } else if (stuckSeconds >= 8) {
+          console.warn('[AUDIO] ⚠️ Track metadata load timeout > 8s → skipping');
+          stuckSeconds = 0;
+          emit('error', {
+            channel: activeChannel,
+            error: new Error('Track metadata load timeout (8s)'),
+            track: activeTrack,
+          });
+          return;
+        }
+        return;
+      }
+
+      if (cur >= dur - 0.3 && !isCrossfading) {
+        stuckSeconds++;
+        if (stuckSeconds >= 2) {
+          console.warn('[AUDIO] End-of-track reached without transition → forcing transition');
+          stuckSeconds = 0;
+          if (preloadedUrl) {
+            performCrossfade();
+          } else {
+            emit('ended', { channel: activeChannel, track: activeTrack });
+          }
+          return;
+        }
+      }
+
+      const isStuckAdvancing = lastCurrentTime >= 0 && Math.abs(cur - lastCurrentTime) < 0.05;
+      const isUnintentionallyPaused = player.paused;
+
+      if (isStuckAdvancing || isUnintentionallyPaused) {
+        stuckSeconds++;
+        console.warn(`[AUDIO] ⚠️ Playback stuck (${stuckSeconds}s) - currentTime: ${cur.toFixed(2)} / ${dur.toFixed(2)}, paused: ${player.paused}`);
+
+        if (stuckSeconds === 4) {
+          try { player.play().catch(() => {}); } catch (_) {}
+        } else if (stuckSeconds >= 8) {
+          console.warn('[AUDIO] ⚠️ Playback stuck > 8s → emitting error for auto-skip');
+          stuckSeconds = 0;
+          emit('error', {
+            channel: activeChannel,
+            error: new Error('Playback stalled timeout (8s)'),
+            track: activeTrack,
+          });
+          return;
+        }
+      } else {
+        stuckSeconds = 0;
+      }
+      lastCurrentTime = cur;
+    }, 1000);
   }
 
   function _attachPlayerListeners(player, channelName) {
@@ -224,7 +300,10 @@
         src: player.src ? player.src.substring(0, 100) + '...' : 'NONE',
         track: activeTrack ? activeTrack.username : null,
       });
-      if (channelName === activeChannel) {
+      if (channelName !== activeChannel) {
+        preloadedUrl = null;
+        preloadedTrack = null;
+      } else {
         emit('error', { channel: channelName, error: player.error, track: activeTrack });
       }
     });
@@ -255,6 +334,9 @@
       return true;
     }
 
+    isUserPaused = false;
+    lastCurrentTime = -1;
+    stuckSeconds = 0;
     preloadTriggered = false;
     activeTrack = track;
 
@@ -333,6 +415,11 @@
       await fadeInPlayer.play();
     } catch (err) {
       console.warn('[AUDIO] fadeInPlayer play error:', err);
+      isCrossfading = false;
+      preloadedUrl = null;
+      preloadedTrack = null;
+      emit('error', { channel: newChannel, error: err, track: newTrack });
+      return;
     }
 
     fadeOutGain.gain.cancelScheduledValues(now);
@@ -344,6 +431,8 @@
     preloadTriggered = false;
     preloadedTrack = null;
     preloadedUrl = null;
+    lastCurrentTime = -1;
+    stuckSeconds = 0;
 
     emit('trackChanged', { track: newTrack, channel: newChannel });
 
@@ -359,11 +448,15 @@
   }
 
   function pause() {
+    isUserPaused = true;
     const player = activeChannel === 'A' ? playerA : playerB;
     if (player) player.pause();
   }
 
   async function resume() {
+    isUserPaused = false;
+    lastCurrentTime = -1;
+    stuckSeconds = 0;
     initAudioContext();
     if (audioCtx.state === 'suspended') {
       await audioCtx.resume();

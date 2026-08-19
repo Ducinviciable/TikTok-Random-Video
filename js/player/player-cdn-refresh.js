@@ -27,9 +27,20 @@
         return;
       }
 
+      let done = false;
+      const timer = setTimeout(() => {
+        if (!done) {
+          done = true;
+          resolve({ ok: false, error: 'refreshCdnUrl timed out after 10s' });
+        }
+      }, 10000);
+
       chrome.runtime.sendMessage(
         { action: 'refreshCdnUrl', canonicalUrl: key },
         (response) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
           if (chrome.runtime.lastError) {
             resolve({ ok: false, error: chrome.runtime.lastError.message });
             return;

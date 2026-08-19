@@ -156,6 +156,74 @@ a:hover {
   pointer-events: none;
 }
 
+#btn-shuffle-library {
+  position: relative;
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--muted-fg);
+  border: 1px solid rgba(139, 156, 246, 0.35);
+  border-radius: var(--radius-sm);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: visible;
+  animation: shuffleAmbientPulse 3.5s ease-in-out infinite;
+}
+
+#btn-shuffle-library::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(139, 156, 246, 0.35), rgba(127, 224, 245, 0.35), rgba(245, 176, 212, 0.35));
+  z-index: -1;
+  opacity: 0.5;
+  animation: ambientGlowBreathe 3.5s ease-in-out infinite;
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+#btn-shuffle-library svg {
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: shuffleAmbientIcon 6s ease-in-out infinite;
+}
+
+#btn-shuffle-library:hover {
+  animation-play-state: paused;
+  background: rgba(255, 255, 255, 0.85);
+  color: #6a53e6;
+  border-color: rgba(139, 156, 246, 0.7);
+  transform: translateY(-2px) scale(1.06);
+  box-shadow: 0 6px 18px rgba(139, 156, 246, 0.4);
+}
+
+#btn-shuffle-library:hover svg {
+  animation-play-state: paused;
+  transform: rotate(180deg);
+}
+
+#btn-shuffle-library:active {
+  transform: translateY(0) scale(0.92);
+  box-shadow: 0 2px 8px rgba(139, 156, 246, 0.2);
+}
+
+#btn-shuffle-library.is-shuffling {
+  color: #6a53e6;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--primary);
+}
+
+#btn-shuffle-library::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 2px solid var(--primary);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#btn-shuffle-library.is-shuffling::after {
+  animation: shuffleRipple 0.65s ease-out;
+}
+
 .library-panel {
   grid-column: 1;
   grid-row: 1;
@@ -1288,6 +1356,61 @@ a:hover {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes shuffleRipple {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes shuffleAmbientPulse {
+  0%, 100% {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(139, 156, 246, 0.15);
+    border-color: rgba(139, 156, 246, 0.3);
+    color: var(--muted-fg);
+  }
+  50% {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 14px rgba(139, 156, 246, 0.35);
+    border-color: rgba(139, 156, 246, 0.6);
+    color: #6a53e6;
+  }
+}
+
+@keyframes ambientGlowBreathe {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes shuffleAmbientIcon {
+  0%, 75% {
+    transform: rotate(0deg) scale(1);
+  }
+  82% {
+    transform: rotate(-15deg) scale(1.1);
+  }
+  90% {
+    transform: rotate(195deg) scale(1.15);
+  }
+  96% {
+    transform: rotate(370deg) scale(1.05);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
   }
 }
 

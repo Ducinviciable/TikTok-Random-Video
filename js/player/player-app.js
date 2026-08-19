@@ -73,6 +73,7 @@ const dom = {
   normalizerBtn:  $('normalizer-btn'),
   tabPlaylist:    $('tab-playlist'),
   tabOffline:     $('tab-offline'),
+  btnShuffleLib:  $('btn-shuffle-library'),
 };
 
 function parseExtensionBackup(data) {
@@ -109,10 +110,19 @@ function parseExtensionBackup(data) {
   return { tracks, bannedCount: blacklistUrls.size };
 }
 
+function shuffleArray(array) {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 function loadTracks(data, source) {
   try {
     const { tracks, bannedCount } = parseExtensionBackup(data);
-    state.tracks = tracks;
+    state.tracks = shuffleArray(tracks);
     state.bannedFromStorage = bannedCount;
     state.blacklisted.clear();
     state.offlineSet.clear();
@@ -122,12 +132,12 @@ function loadTracks(data, source) {
     refreshUI();
 
     const label = source === 'storage' ? 'extension storage' : 'file JSON';
-    showToast(`✅ Đã tải ${tracks.length} video từ ${label}!`);
+    showToast(`✅ Đã tải ${state.tracks.length} video từ ${label}!`);
 
-    if (tracks.length > 0) {
-      highlightTrack(tracks[0].id);
+    if (state.tracks.length > 0) {
+      highlightTrack(state.tracks[0].id);
       if (window.PlayerCDN) {
-        const initialUrls = tracks.slice(0, 4).map(t => t.canonicalUrl);
+        const initialUrls = state.tracks.slice(0, 4).map(t => t.canonicalUrl);
         PlayerCDN.prefetchTracks(initialUrls);
       }
     }
@@ -341,6 +351,12 @@ async function startPlayback(track) {
       if (ok) {
         showToast(`🎧 Đang phát: ${track.username}`);
         triggerNextPreload(track);
+      } else {
+        if (window.PlayerCDN) {
+          PlayerCDN.invalidateCdnCache(track.canonicalUrl);
+        }
+        showToast(`⚠️ Không thể phát video của ${track.username}, thử bài kế tiếp`);
+        setTimeout(() => nextTrack(), 1200);
       }
     }
   } else {
@@ -469,6 +485,18 @@ function previousTrack() {
 
 function visibleTracks() {
   return state.tracks.filter(t => !state.blacklisted.has(t.id));
+}
+
+function shuffleLibrary() {
+  if (!state.tracks || state.tracks.length <= 1) return;
+  state.tracks = shuffleArray(state.tracks);
+  refreshUI();
+  if (dom.btnShuffleLib) {
+    dom.btnShuffleLib.classList.remove('is-shuffling');
+    void dom.btnShuffleLib.offsetWidth;
+    dom.btnShuffleLib.classList.add('is-shuffling');
+  }
+  showToast('🔀 Đã xáo trộn danh sách video!');
 }
 
 function toggleShuffle() {
@@ -843,6 +871,12 @@ function initUIEventListeners() {
   if (dom.volumeRange) dom.volumeRange.addEventListener('input', (e) => updateVolume(e.target.value));
   if (dom.toastClose) dom.toastClose.addEventListener('click', hideToast);
   if (dom.searchInput) dom.searchInput.addEventListener('input', refreshUI);
+  if (dom.btnShuffleLib) {
+    dom.btnShuffleLib.addEventListener('click', shuffleLibrary);
+    dom.btnShuffleLib.addEventListener('animationend', () => {
+      dom.btnShuffleLib.classList.remove('is-shuffling');
+    });
+  }
 }
 
 function initAudioEventListeners() {
@@ -879,6 +913,10 @@ function initAudioEventListeners() {
   });
 
   PlayerAudio.on('ended', () => {
+    if (skipCooldownTimer) {
+      clearTimeout(skipCooldownTimer);
+      skipCooldownTimer = null;
+    }
     handleTrackEnded();
   });
 
@@ -888,10 +926,15 @@ function initAudioEventListeners() {
     if (track && window.PlayerCDN) {
       PlayerCDN.invalidateCdnCache(track.canonicalUrl);
     }
-    if (skipCooldownTimer) return;
+    const isStalled = error && (error.message && error.message.includes('stalled'));
+    const trackName = track && track.username ? track.username : 'bài hát này';
+    const msg = isStalled
+      ? `⚠️ Luồng phát của ${trackName} bị đứng quá lâu → Tự chuyển bài...`
+      : `⚠️ Không thể phát ${trackName}, đang chuyển bài kế tiếp...`;
+    showToast(msg);
+    if (skipCooldownTimer) clearTimeout(skipCooldownTimer);
     skipCooldownTimer = setTimeout(() => {
       skipCooldownTimer = null;
-      showToast('⚠️ Không thể phát video này, thử bài kế tiếp...');
       nextTrack();
     }, 1200);
   });
@@ -903,7 +946,7 @@ Object.assign(window, {
   banTrack, saveOffline, seekTo,
   setMode, toggleNormalizer, updateBass, updateCrossfade,
   updateVolume, switchTab, hideToast,
-  applyPreset, updateEqBand,
+  applyPreset, updateEqBand, shuffleLibrary,
 });
 
 buildEqSliders();

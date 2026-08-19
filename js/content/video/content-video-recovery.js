@@ -259,6 +259,24 @@ function startStuckMonitor() {
     const video = currentVideoElement;
     if (video.duration && video.duration > 1 && !video.ended) {
       const currentTime = video.currentTime;
+
+      if (currentTime >= video.duration - 0.3) {
+        stuckSeconds++;
+        if (stuckSeconds >= 3) {
+          console.warn(
+            "[CS] ⚠️ Video reached end without transition → Tự chuyển video",
+          );
+          if (typeof showToast === "function") {
+            showToast("⚠️ Video chạm cuối nhưng bị kẹt → Tự chuyển video", "warning");
+          }
+          clearInterval(stuckInterval);
+          if (typeof requestNextVideo === "function") {
+            requestNextVideo();
+          }
+          return;
+        }
+      }
+
       if (
         lastVideoTime >= 0 &&
         Math.abs(currentTime - lastVideoTime) < 0.05 &&

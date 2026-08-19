@@ -10,6 +10,7 @@ var earlySkipTargetRatio = 0;
 var earlySkipTriggered = false;
 var lastTimeForLoop = -1;
 var lastSkipTimestamp = 0;
+var playNextSafetyTimer = null;
 
 function warmUpNextVideoUrl(nextUrl) {
   if (!nextUrl || typeof nextUrl !== "string" || !nextUrl.startsWith("http"))
@@ -194,10 +195,26 @@ function requestNextVideo() {
   if (playNextRequested !== true) {
     playNextRequested = true;
   }
+
+  if (playNextSafetyTimer) clearTimeout(playNextSafetyTimer);
+  playNextSafetyTimer = setTimeout(function () {
+    if (playNextRequested && videoWatcherActive) {
+      console.warn(
+        "[CS] ⚠️ playNextRequested timed out after 8s → resetting lock and retrying requestNextVideo",
+      );
+      if (typeof showToast === "function") {
+        showToast("⚠️ Chuyển video bị nghẽn → Đang thử lại...", "warning");
+      }
+      playNextRequested = false;
+      requestNextVideo();
+    }
+  }, 8000);
+
   console.log("[CS] → Sending playNext to background");
   try {
     chrome.runtime.sendMessage({ action: "playNext" }, function () {
       if (chrome.runtime.lastError) {
+        if (playNextSafetyTimer) clearTimeout(playNextSafetyTimer);
         console.warn("[CS] playNext failed:", chrome.runtime.lastError.message);
         playNextRequested = false;
         // Try to resume video if navigation failed
