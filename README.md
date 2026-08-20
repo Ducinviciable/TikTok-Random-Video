@@ -142,11 +142,7 @@ TikTok-Random-Liked/
 ---
 
 ## 🛡️ Nguyên Tắc An Toàn & Bảo Mật
-
-1. **Tuyệt đối không xóa Akamai Cookies**: Bảo tồn nguyên vẹn các token authorization (`_abck`, `bm_*`) để không kích hoạt WAF 403 Access Denied.
-2. **Điều hướng SPA không reload tab**: Sử dụng `window.location.href` ngầm để chuyển video mượt mà, không dùng `tabs.update()` hay `location.reload()`.
-3. **Chỉ lưu Canonical URL**: Không bao giờ lưu cứng link CDN `.mp4` vào file JSON để tránh lỗi link chết sau 12-24h (chữ ký `x-expires`).
-4. **Bảo mật dữ liệu cục bộ**: Dữ liệu video và danh sách đen được lưu trữ 100% trong trình duyệt của bạn (`chrome.storage.local`), không gửi về bất kỳ máy chủ bên thứ ba nào.
+**Bảo mật dữ liệu cục bộ**: Dữ liệu video và danh sách đen được lưu trữ 100% trong trình duyệt của bạn (`chrome.storage.local`), không gửi về bất kỳ máy chủ bên thứ ba nào.
 
 ---
 
