@@ -8,6 +8,8 @@ async function selectRandomVideo(excludeUrl = "") {
     "likedVideos",
     "playedVideos",
     "blacklistedVideos",
+    "healingQueue",
+    "healingEnabled",
   ]);
   const videos = data.likedVideos || [];
   let played = data.playedVideos || [];
@@ -34,12 +36,45 @@ async function selectRandomVideo(excludeUrl = "") {
     unplayedPool = pool;
   }
 
-  const selectedVideo =
-    unplayedPool[Math.floor(Math.random() * unplayedPool.length)];
-  const selectedUrl = getUrl(selectedVideo);
+  // Build weighted pool: healing queue entries get 3x weight
+  const healingEnabled = data.healingEnabled !== false;
+  const healingQueue = data.healingQueue || [];
+  const pendingHealSet = new Set(
+    healingEnabled
+      ? healingQueue
+          .filter((e) => e.status === "pending" && e.retryCount < HEALING_MAX_RETRIES)
+          .map((e) => e.url)
+      : [],
+  );
 
-  played.push(selectedUrl.split("?")[0]);
+  const weightedPool = [];
+  for (const v of unplayedPool) {
+    weightedPool.push(v);
+    if (pendingHealSet.has(getUrl(v).split("?")[0])) {
+      weightedPool.push(v, v); // extra 2 copies = 3x total weight
+    }
+  }
+
+  const selectedVideo =
+    weightedPool[Math.floor(Math.random() * weightedPool.length)];
+  const selectedUrl = getUrl(selectedVideo);
+  const selectedCanonical = selectedUrl.split("?")[0];
+
+  played.push(selectedCanonical);
   await chrome.storage.local.set({ playedVideos: played });
+
+  // Update retryCount if this is a healing video
+  if (pendingHealSet.has(selectedCanonical) && healingQueue.length > 0) {
+    const idx = healingQueue.findIndex((e) => e.url === selectedCanonical);
+    if (idx !== -1) {
+      healingQueue[idx].retryCount += 1;
+      healingQueue[idx].lastRetryAt = Date.now();
+      if (healingQueue[idx].retryCount >= HEALING_MAX_RETRIES) {
+        healingQueue[idx].status = "dead";
+      }
+      await chrome.storage.local.set({ healingQueue });
+    }
+  }
 
   return {
     video: selectedVideo,

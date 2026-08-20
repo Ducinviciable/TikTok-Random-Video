@@ -150,6 +150,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       return true;
     }
+
+    case "enqueueForHealing":
+      handleEnqueueForHealing(request).then(sendResponse);
+      return true;
+
+    case "healVideo":
+      handleHealVideo(request).then(sendResponse);
+      return true;
+
+    case "markHealingDead":
+      handleMarkHealingDead(request).then(sendResponse);
+      return true;
+
+    case "getHealingQueue":
+      handleGetHealingQueue().then(sendResponse);
+      return true;
+
+    case "clearHealingQueue":
+      handleClearHealingQueue().then(sendResponse);
+      return true;
   }
 });
 

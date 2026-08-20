@@ -51,6 +51,9 @@ function watchForVideoElement() {
 
   console.log("[CS] Chuyển sang video mới");
 
+  _checkAndHealVideo(currentVideoElement);
+
+
   // Force aggressive buffering + immediate playback attempt
   currentVideoElement.setAttribute("preload", "auto");
   currentVideoElement.setAttribute("playsinline", "");
@@ -212,3 +215,63 @@ function initVideoWatcher() {
     }
   });
 }
+
+function _checkAndHealVideo(videoEl) {
+  const canonicalUrl = window.location.href.split("?")[0];
+  if (!canonicalUrl.includes("/video/")) return;
+
+  chrome.storage.local.get(["healingQueue", "healingEnabled"], function (data) {
+    if (data.healingEnabled === false) return;
+    const queue = data.healingQueue || [];
+    const entry = queue.find(
+      (e) => e.url === canonicalUrl && e.status === "pending",
+    );
+    if (!entry) return;
+
+    // Check if the page itself signals the video is unavailable/deleted
+    const bodyText = document.body ? document.body.innerText || "" : "";
+    const isUnavailable =
+      bodyText.includes("Video unavailable") ||
+      bodyText.includes("This video is unavailable") ||
+      bodyText.includes("Couldn't find this video") ||
+      document.title.toLowerCase().includes("404");
+
+    if (isUnavailable) {
+      chrome.runtime.sendMessage(
+        { action: "markHealingDead", canonicalUrl },
+        function () {
+          if (chrome.runtime.lastError) {}
+        },
+      );
+      return;
+    }
+
+    // Wait for the video element to have a valid playable CDN src
+    var attempts = 0;
+    var pollInterval = setInterval(function () {
+      attempts++;
+      var src = videoEl ? (videoEl.currentSrc || videoEl.src || "") : "";
+      var isValidSrc =
+        src &&
+        !src.startsWith("blob:") &&
+        !src.startsWith("data:") &&
+        src.includes("http");
+
+      if (isValidSrc) {
+        clearInterval(pollInterval);
+        chrome.runtime.sendMessage(
+          { action: "healVideo", canonicalUrl, newCdnUrl: src },
+          function () {
+            if (chrome.runtime.lastError) {}
+          },
+        );
+        return;
+      }
+
+      if (attempts >= 20) {
+        clearInterval(pollInterval);
+      }
+    }, 500);
+  });
+}
+

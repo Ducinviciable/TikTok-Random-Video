@@ -250,3 +250,97 @@ async function handleSetAutoNext(enabled) {
   notifyContentScriptAutoNext(enabled);
   return { success: true };
 }
+
+const HEALING_MAX_ENTRIES = 50;
+const HEALING_MAX_RETRIES = 3;
+const HEALING_CLEANUP_AGE_MS = 24 * 60 * 60 * 1000;
+
+async function _getHealingQueue() {
+  const data = await chrome.storage.local.get(["healingQueue"]);
+  return data.healingQueue || [];
+}
+
+async function _saveHealingQueue(queue) {
+  await chrome.storage.local.set({ healingQueue: queue });
+}
+
+async function handleEnqueueForHealing(request) {
+  const canonicalUrl = (request.canonicalUrl || "").split("?")[0];
+  if (!canonicalUrl || !canonicalUrl.includes("/video/")) {
+    return { success: false, error: "Invalid URL" };
+  }
+
+  let queue = await _getHealingQueue();
+
+  const existing = queue.find((e) => e.url === canonicalUrl);
+  if (existing) {
+    if (existing.retryCount >= HEALING_MAX_RETRIES || existing.status === "dead") {
+      return { success: false, error: "Max retries or dead" };
+    }
+    return { success: true, alreadyQueued: true };
+  }
+
+  const entry = {
+    url: canonicalUrl,
+    reason: request.reason || "unknown",
+    addedAt: Date.now(),
+    retryCount: 0,
+    lastRetryAt: null,
+    status: "pending",
+  };
+
+  queue.push(entry);
+  if (queue.length > HEALING_MAX_ENTRIES) {
+    queue = queue.slice(queue.length - HEALING_MAX_ENTRIES);
+  }
+
+  await _saveHealingQueue(queue);
+  return { success: true };
+}
+
+async function handleHealVideo(request) {
+  const canonicalUrl = (request.canonicalUrl || "").split("?")[0];
+  if (!canonicalUrl) return { success: false };
+
+  const queue = await _getHealingQueue();
+  const idx = queue.findIndex((e) => e.url === canonicalUrl);
+  if (idx === -1) return { success: false, error: "Not in queue" };
+
+  queue[idx].status = "healed";
+  queue[idx].healedAt = Date.now();
+  if (request.newCdnUrl) queue[idx].newCdnUrl = request.newCdnUrl;
+
+  // Purge healed entries older than 24h
+  const cutoff = Date.now() - HEALING_CLEANUP_AGE_MS;
+  const cleaned = queue.filter(
+    (e) => !(e.status === "healed" && e.healedAt && e.healedAt < cutoff),
+  );
+
+  await _saveHealingQueue(cleaned);
+  return { success: true };
+}
+
+async function handleMarkHealingDead(request) {
+  const canonicalUrl = (request.canonicalUrl || "").split("?")[0];
+  if (!canonicalUrl) return { success: false };
+
+  const queue = await _getHealingQueue();
+  const idx = queue.findIndex((e) => e.url === canonicalUrl);
+  if (idx !== -1) {
+    queue[idx].status = "dead";
+    await _saveHealingQueue(queue);
+  }
+  return { success: true };
+}
+
+async function handleGetHealingQueue() {
+  const queue = await _getHealingQueue();
+  const pending = queue.filter((e) => e.status === "pending");
+  return { success: true, queue, pendingCount: pending.length };
+}
+
+async function handleClearHealingQueue() {
+  await chrome.storage.local.remove(["healingQueue"]);
+  return { success: true };
+}
+
