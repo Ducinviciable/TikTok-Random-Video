@@ -18,7 +18,11 @@
     "*://*.byteoversea.com/*",
     "*://*.ibytedtos.com/*",
     "*://*.tikwm.com/*",
-    "https://tikwm.com/*"
+    "https://tikwm.com/*",
+    "*://*.cobalt.tools/*",
+    "https://api.cobalt.tools/*",
+    "*://*.tiksave.io/*",
+    "*://*.vkrdown.com/*"
   ],
   "background": {
     "service_worker": "background.js"

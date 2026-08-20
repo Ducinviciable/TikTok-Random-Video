@@ -4,6 +4,7 @@ importScripts(
   "js/background/bg-storage.js",
   "js/background/bg-playback.js",
   "js/background/bg-collections.js",
+  "js/background/bg-fallback.js",
   "js/background/bg-player.js",
 );
 

@@ -265,6 +265,9 @@ function _checkAndHealVideo(videoEl) {
             if (chrome.runtime.lastError) {}
           },
         );
+        if (typeof showToast === "function") {
+          showToast("Chúc mừng video đã hồi sinh 🤩", "success");
+        }
         return;
       }
 

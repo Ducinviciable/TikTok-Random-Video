@@ -36,35 +36,64 @@ async function selectRandomVideo(excludeUrl = "") {
     unplayedPool = pool;
   }
 
-  // Build weighted pool: healing queue entries get 3x weight
+  // Get pending healing videos
   const healingEnabled = data.healingEnabled !== false;
   const healingQueue = data.healingQueue || [];
-  const pendingHealSet = new Set(
-    healingEnabled
-      ? healingQueue
-          .filter((e) => e.status === "pending" && e.retryCount < HEALING_MAX_RETRIES)
-          .map((e) => e.url)
-      : [],
-  );
+  const pendingHealingVideos = healingEnabled
+    ? healingQueue.filter((e) => e.status === "pending" && e.retryCount < HEALING_MAX_RETRIES)
+    : [];
 
-  const weightedPool = [];
-  for (const v of unplayedPool) {
-    weightedPool.push(v);
-    if (pendingHealSet.has(getUrl(v).split("?")[0])) {
-      weightedPool.push(v, v); // extra 2 copies = 3x total weight
+  let selectedVideo = null;
+  let isHealPick = false;
+  let normalVideosPlayedCount = 0;
+
+  if (pendingHealingVideos.length > 0) {
+    const playedCountData = await chrome.storage.local.get(["normalVideosPlayedCount"]);
+    normalVideosPlayedCount = playedCountData.normalVideosPlayedCount || 0;
+
+    if (normalVideosPlayedCount >= 3) {
+      const pendingUrls = new Set(pendingHealingVideos.map((e) => e.url));
+      
+      // Try unplayed pool first
+      let matchingVideos = unplayedPool.filter(
+        (v) => pendingUrls.has(getUrl(v).split("?")[0])
+      );
+      
+      if (matchingVideos.length === 0) {
+        // Fallback to played pool
+        matchingVideos = pool.filter(
+          (v) => pendingUrls.has(getUrl(v).split("?")[0])
+        );
+      }
+
+      if (matchingVideos.length > 0) {
+        selectedVideo = matchingVideos[Math.floor(Math.random() * matchingVideos.length)];
+        isHealPick = true;
+      }
     }
   }
 
-  const selectedVideo =
-    weightedPool[Math.floor(Math.random() * weightedPool.length)];
+  if (isHealPick) {
+    normalVideosPlayedCount = 0;
+  } else {
+    selectedVideo = unplayedPool[Math.floor(Math.random() * unplayedPool.length)];
+    if (pendingHealingVideos.length > 0) {
+      normalVideosPlayedCount += 1;
+    } else {
+      normalVideosPlayedCount = 0;
+    }
+  }
+
+  await chrome.storage.local.set({ normalVideosPlayedCount });
+
   const selectedUrl = getUrl(selectedVideo);
   const selectedCanonical = selectedUrl.split("?")[0];
 
   played.push(selectedCanonical);
   await chrome.storage.local.set({ playedVideos: played });
 
-  // Update retryCount if this is a healing video
-  if (pendingHealSet.has(selectedCanonical) && healingQueue.length > 0) {
+  // Update retryCount if this was a healing pick
+  if (isHealPick && healingQueue.length > 0) {
     const idx = healingQueue.findIndex((e) => e.url === selectedCanonical);
     if (idx !== -1) {
       healingQueue[idx].retryCount += 1;
