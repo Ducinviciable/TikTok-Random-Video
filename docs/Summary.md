@@ -161,10 +161,10 @@ Random-Video/
 5. Background chọn video ngẫu nhiên tiếp theo và điều hướng tab qua SPA message `navigateToVideo` (không dùng `location.reload()` để tránh làm mới trang).
 
 ### 3. Luồng Phát TikTok Hi-Fi Studio (JIT Silent Fetch & Web Audio DSP)
-1. **Khởi tạo hàng chờ**: Nạp từ `chrome.storage.local` hoặc kéo thả trực tiếp file backup JSON v3.1.
-2. **JIT Silent Fetch**: Khi chuẩn bị phát hoặc preload bài tiếp theo ở 85% thời lượng:
+1. **Khởi tạo hàng chờ**: Nạp từ `chrome.storage.local` hoặc kéo thả trực tiếp file backup JSON v3.1
+2. **JIT Multi-Server Fetch**: Khi chuẩn bị phát hoặc preload bài tiếp theo ở 85% thời lượng:
    - `PlayerCDN` gửi thông điệp `refreshCdnUrl` về Background.
-   - Background thực hiện fetch ngầm lấy stream video `.mp4` (Fast TikWM + Silent Fallback) và trả về client với TTL 15 phút.
+   - Background điều phối qua `bg-stream-extractor.js` (Multi-Server Fallback: TikWM $\rightarrow$ Cobalt API $\rightarrow$ TikSave API $\rightarrow$ Silent Rehydration Fetch) và trả về client với TTL 15 phút.
    - DNR Rule cô lập (`initiatorDomains: [chrome.runtime.id]`) mở quyền CORS cho tab Extension mà hoàn toàn không can thiệp vào tab TikTok.
 3. **Web Audio DSP Pipeline**:
    $$\text{Player A/B} \longrightarrow \text{Gain A/B} \longrightarrow \text{10-Band EQ} \longrightarrow \text{Bass Boost (+12dB)} \longrightarrow \text{DynamicsCompressor} \longrightarrow \text{Master Gain (300\%)} \longrightarrow \text{Speakers}$$

@@ -8,6 +8,8 @@ async function selectRandomVideo(excludeUrl = "") {
     "likedVideos",
     "playedVideos",
     "blacklistedVideos",
+    "healingQueue",
+    "healingEnabled",
   ]);
   const videos = data.likedVideos || [];
   let played = data.playedVideos || [];
@@ -34,12 +36,79 @@ async function selectRandomVideo(excludeUrl = "") {
     unplayedPool = pool;
   }
 
-  const selectedVideo =
-    unplayedPool[Math.floor(Math.random() * unplayedPool.length)];
-  const selectedUrl = getUrl(selectedVideo);
+  // Get pending healing videos
+  const healingEnabled = data.healingEnabled !== false;
+  const healingQueue = data.healingQueue || [];
+  const pendingHealingVideos = healingEnabled
+    ? healingQueue.filter((e) => e.status === "pending" && e.retryCount < HEALING_MAX_RETRIES)
+    : [];
 
-  played.push(selectedUrl.split("?")[0]);
+  let selectedVideo = null;
+  let isHealPick = false;
+  let normalVideosPlayedCount = 0;
+
+  if (pendingHealingVideos.length > 0) {
+    const playedCountData = await chrome.storage.local.get(["normalVideosPlayedCount"]);
+    normalVideosPlayedCount = playedCountData.normalVideosPlayedCount || 0;
+
+    if (normalVideosPlayedCount >= 3) {
+      // Try unplayed pool first
+      let matchingVideos = unplayedPool.filter((v) => {
+        const vUrl = getUrl(v);
+        return pendingHealingVideos.some((h) => isMatchingTikTokVideo(h.url, vUrl));
+      });
+
+      if (matchingVideos.length === 0) {
+        // Fallback to played pool
+        matchingVideos = pool.filter((v) => {
+          const vUrl = getUrl(v);
+          return pendingHealingVideos.some((h) => isMatchingTikTokVideo(h.url, vUrl));
+        });
+      }
+
+      if (matchingVideos.length > 0) {
+        selectedVideo = matchingVideos[Math.floor(Math.random() * matchingVideos.length)];
+        isHealPick = true;
+      } else if (pendingHealingVideos.length > 0) {
+        // Direct pick from queue if not found in pool
+        const healEntry = pendingHealingVideos[Math.floor(Math.random() * pendingHealingVideos.length)];
+        selectedVideo = { url: healEntry.url, thumb: "" };
+        isHealPick = true;
+      }
+    }
+  }
+
+  if (isHealPick) {
+    normalVideosPlayedCount = 0;
+  } else {
+    selectedVideo = unplayedPool[Math.floor(Math.random() * unplayedPool.length)];
+    if (pendingHealingVideos.length > 0) {
+      normalVideosPlayedCount += 1;
+    } else {
+      normalVideosPlayedCount = 0;
+    }
+  }
+
+  await chrome.storage.local.set({ normalVideosPlayedCount });
+
+  const selectedUrl = getUrl(selectedVideo);
+  const selectedCanonical = selectedUrl.split("?")[0];
+
+  played.push(selectedCanonical);
   await chrome.storage.local.set({ playedVideos: played });
+
+  // Update retryCount if this was a healing pick
+  if (isHealPick && healingQueue.length > 0) {
+    const idx = healingQueue.findIndex((e) => isMatchingTikTokVideo(e.url, selectedCanonical));
+    if (idx !== -1) {
+      healingQueue[idx].retryCount += 1;
+      healingQueue[idx].lastRetryAt = Date.now();
+      if (healingQueue[idx].retryCount >= HEALING_MAX_RETRIES) {
+        healingQueue[idx].status = "dead";
+      }
+      await chrome.storage.local.set({ healingQueue });
+    }
+  }
 
   return {
     video: selectedVideo,

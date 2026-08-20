@@ -91,16 +91,29 @@ function showToast(message, type) {
     toast = document.createElement("div");
     toast.id = "tk-random-toast";
     toast.style.cssText =
-      "position:fixed;top:20px;right:20px;z-index:999999;background:rgba(20,20,32,0.92);color:#fff;padding:12px 18px;border-radius:10px;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.18);backdrop-filter:blur(10px);transition:all 0.3s cubic-bezier(0.16,1,0.3,1);pointer-events:none;display:flex;align-items:center;gap:8px;";
-    document.body.appendChild(toast);
+      "position:fixed;top:24px;right:24px;z-index:2147483647;background:rgba(15,23,42,0.95);color:#fff;padding:12px 20px;border-radius:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);backdrop-filter:blur(12px);transition:all 0.35s cubic-bezier(0.16,1,0.3,1);pointer-events:none;display:flex;align-items:center;gap:10px;";
+    (document.body || document.documentElement).appendChild(toast);
   }
+
+  if (type === "success") {
+    toast.style.borderColor = "rgba(34,197,94,0.7)";
+    toast.style.boxShadow = "0 10px 30px rgba(0,0,0,0.5), 0 0 20px rgba(34,197,94,0.3)";
+  } else if (type === "warning") {
+    toast.style.borderColor = "rgba(234,179,8,0.7)";
+    toast.style.boxShadow = "0 10px 30px rgba(0,0,0,0.5), 0 0 20px rgba(234,179,8,0.3)";
+  } else {
+    toast.style.borderColor = "rgba(255,255,255,0.2)";
+    toast.style.boxShadow = "0 10px 30px rgba(0,0,0,0.5)";
+  }
+
   toast.innerHTML = message;
+  toast.style.display = "flex";
   toast.style.opacity = "1";
   toast.style.transform = "translateY(0)";
 
   if (toast._timer) clearTimeout(toast._timer);
   toast._timer = setTimeout(function () {
     toast.style.opacity = "0";
-    toast.style.transform = "translateY(-10px)";
-  }, 4000);
+    toast.style.transform = "translateY(-12px)";
+  }, 4500);
 }

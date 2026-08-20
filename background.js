@@ -4,6 +4,7 @@ importScripts(
   "js/background/bg-storage.js",
   "js/background/bg-playback.js",
   "js/background/bg-collections.js",
+  "js/background/bg-fallback.js",
   "js/background/bg-player.js",
 );
 
@@ -150,6 +151,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       return true;
     }
+
+    case "enqueueForHealing":
+      handleEnqueueForHealing(request).then(sendResponse);
+      return true;
+
+    case "healVideo":
+      handleHealVideo(request).then(sendResponse);
+      return true;
+
+    case "markHealingDead":
+      handleMarkHealingDead(request).then(sendResponse);
+      return true;
+
+    case "getHealingQueue":
+      handleGetHealingQueue().then(sendResponse);
+      return true;
+
+    case "clearHealingQueue":
+      handleClearHealingQueue().then(sendResponse);
+      return true;
   }
 });
 

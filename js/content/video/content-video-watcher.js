@@ -1,6 +1,16 @@
 // Module: content-video-watcher.js
 // Responsibilities: Video Element Discovery, Buffer/Play Configuration, Event Listeners, Loop Guardian, Video Watcher Initializer
 
+function isMatchingTikTokVideo(url1, url2) {
+  if (!url1 || !url2) return false;
+  const match1 = url1.match(/\/video\/(\d+)/) || url1.match(/\/v\/(\d+)/);
+  const match2 = url2.match(/\/video\/(\d+)/) || url2.match(/\/v\/(\d+)/);
+  if (match1 && match2 && match1[1] === match2[1]) return true;
+  const clean1 = url1.split("?")[0].split("#")[0].replace(/\/$/, "").toLowerCase();
+  const clean2 = url2.split("?")[0].split("#")[0].replace(/\/$/, "").toLowerCase();
+  return clean1 === clean2;
+}
+
 function watchForVideoElement() {
   const videos = document.querySelectorAll("video");
   if (videos.length === 0) return;
@@ -50,6 +60,8 @@ function watchForVideoElement() {
   }
 
   console.log("[CS] Chuyển sang video mới");
+
+  _checkAndHealVideo(currentVideoElement);
 
   // Force aggressive buffering + immediate playback attempt
   currentVideoElement.setAttribute("preload", "auto");
@@ -210,5 +222,71 @@ function initVideoWatcher() {
         }
       }, 500);
     }
+  });
+}
+
+function _checkAndHealVideo(videoEl) {
+  const canonicalUrl = window.location.href.split("?")[0];
+  if (!canonicalUrl.includes("/video/")) return;
+
+  chrome.storage.local.get(["healingQueue", "healingEnabled"], function (data) {
+    if (data.healingEnabled === false) return;
+    const queue = data.healingQueue || [];
+    const entry = queue.find(
+      (e) => isMatchingTikTokVideo(e.url, canonicalUrl) && e.status === "pending",
+    );
+    if (!entry) return;
+
+    // Check if the page itself signals the video is unavailable/deleted
+    const bodyText = document.body ? document.body.innerText || "" : "";
+    const isUnavailable =
+      bodyText.includes("Video unavailable") ||
+      bodyText.includes("This video is unavailable") ||
+      bodyText.includes("Couldn't find this video") ||
+      document.title.toLowerCase().includes("404");
+
+    if (isUnavailable) {
+      chrome.runtime.sendMessage(
+        { action: "markHealingDead", canonicalUrl },
+        function () {
+          if (chrome.runtime.lastError) {}
+        },
+      );
+      return;
+    }
+
+    var attempts = 0;
+    var pollInterval = setInterval(function () {
+      attempts++;
+
+      var liveEl = currentVideoElement || videoEl || document.querySelector("video");
+      var isHealed =
+        liveEl &&
+        !liveEl.error &&
+        (liveEl.readyState >= 2 || liveEl.currentTime > 0 || (liveEl.duration > 0 && !liveEl.paused));
+
+      if (isHealed) {
+        clearInterval(pollInterval);
+        var rawSrc = liveEl.currentSrc || liveEl.src || "";
+        var directCdnUrl =
+          rawSrc && !rawSrc.startsWith("blob:") && !rawSrc.startsWith("data:") && rawSrc.startsWith("http")
+            ? rawSrc
+            : null;
+        chrome.runtime.sendMessage(
+          { action: "healVideo", canonicalUrl, newCdnUrl: directCdnUrl },
+          function () {
+            if (chrome.runtime.lastError) {}
+          },
+        );
+        if (typeof showToast === "function") {
+          showToast("Chúc mừng video đã hồi sinh 🤩", "success");
+        }
+        return;
+      }
+
+      if (attempts >= 30) {
+        clearInterval(pollInterval);
+      }
+    }, 500);
   });
 }

@@ -194,28 +194,39 @@
       if (!player || !player.src || !activeTrack) return;
 
       const dur = player.duration;
-      const cur = player.currentTime;
+      const cur = player.currentTime || 0;
 
-      if (!dur || isNaN(dur) || dur <= 0) {
-        stuckSeconds++;
-        if (stuckSeconds === 4) {
-          try { player.play().catch(() => {}); } catch (_) {}
-        } else if (stuckSeconds >= 8) {
-          console.warn('[AUDIO] ⚠️ Track metadata load timeout > 8s → skipping');
-          stuckSeconds = 0;
-          emit('error', {
-            channel: activeChannel,
-            error: new Error('Track metadata load timeout (8s)'),
-            track: activeTrack,
-          });
-          return;
-        }
+      if (!player.paused && cur > 0 && (lastCurrentTime < 0 || cur > lastCurrentTime + 0.02)) {
+        stuckSeconds = 0;
+        lastCurrentTime = cur;
         return;
       }
 
-      if (cur >= dur - 0.3 && !isCrossfading) {
+      if (!dur || isNaN(dur) || dur <= 0) {
+        if (player.paused || cur === 0) {
+          stuckSeconds++;
+          if (stuckSeconds === 4) {
+            try { player.play().catch(() => {}); } catch (_) {}
+          } else if (stuckSeconds >= 12) {
+            console.warn('[AUDIO] ⚠️ Track metadata load timeout > 12s → skipping');
+            stuckSeconds = 0;
+            emit('error', {
+              channel: activeChannel,
+              error: new Error('Track metadata load timeout (12s)'),
+              track: activeTrack,
+            });
+            return;
+          }
+        } else {
+          stuckSeconds = 0;
+        }
+        lastCurrentTime = cur;
+        return;
+      }
+
+      if (dur > 0 && cur >= dur - 0.3 && !isCrossfading) {
         stuckSeconds++;
-        if (stuckSeconds >= 2) {
+        if (stuckSeconds >= 3) {
           console.warn('[AUDIO] End-of-track reached without transition → forcing transition');
           stuckSeconds = 0;
           if (preloadedUrl) {
@@ -227,21 +238,21 @@
         }
       }
 
-      const isStuckAdvancing = lastCurrentTime >= 0 && Math.abs(cur - lastCurrentTime) < 0.05;
+      const isStuckAdvancing = lastCurrentTime >= 0 && Math.abs(cur - lastCurrentTime) < 0.01;
       const isUnintentionallyPaused = player.paused;
 
       if (isStuckAdvancing || isUnintentionallyPaused) {
         stuckSeconds++;
         console.warn(`[AUDIO] ⚠️ Playback stuck (${stuckSeconds}s) - currentTime: ${cur.toFixed(2)} / ${dur.toFixed(2)}, paused: ${player.paused}`);
 
-        if (stuckSeconds === 4) {
+        if (stuckSeconds === 4 || stuckSeconds === 8) {
           try { player.play().catch(() => {}); } catch (_) {}
-        } else if (stuckSeconds >= 8) {
-          console.warn('[AUDIO] ⚠️ Playback stuck > 8s → emitting error for auto-skip');
+        } else if (stuckSeconds >= 12) {
+          console.warn('[AUDIO] ⚠️ Playback stuck > 12s → emitting error for auto-skip');
           stuckSeconds = 0;
           emit('error', {
             channel: activeChannel,
-            error: new Error('Playback stalled timeout (8s)'),
+            error: new Error('Playback stalled timeout (12s)'),
             track: activeTrack,
           });
           return;
@@ -268,16 +279,23 @@
         track: activeTrack,
       });
 
-      if (dur > 6 && !preloadTriggered) {
+      if (dur >= 15 && !preloadTriggered) {
+        const effectiveCrossfade = Math.min(crossfadeDuration, dur * 0.12);
         const remaining = dur - cur;
-        if (pct >= 85 || remaining <= (crossfadeDuration + 2)) {
+        if (pct >= 85 || remaining <= (effectiveCrossfade + 3)) {
           preloadTriggered = true;
           emit('preloadNeeded', { currentTrack: activeTrack });
         }
+      } else if (dur > 0 && dur < 15 && !preloadTriggered && pct >= 80) {
+        preloadTriggered = true;
+        emit('preloadNeeded', { currentTrack: activeTrack });
       }
 
-      if (!isCrossfading && preloadedUrl && dur > 6 && (dur - cur) <= crossfadeDuration && crossfadeDuration > 0) {
-        performCrossfade();
+      if (!isCrossfading && preloadedUrl && dur >= 15 && crossfadeDuration > 0) {
+        const effectiveCrossfade = Math.min(crossfadeDuration, dur * 0.12);
+        if ((dur - cur) <= effectiveCrossfade) {
+          performCrossfade();
+        }
       }
     });
 
@@ -293,6 +311,10 @@
 
     player.addEventListener('error', () => {
       const err = player.error;
+      if (!player.src || player.src === '' || (err && err.code === 1)) {
+        return;
+      }
+
       console.error('[AUDIO] Player Error:', {
         code: err ? err.code : 'UNKNOWN',
         message: err ? err.message : '',
@@ -300,10 +322,15 @@
         src: player.src ? player.src.substring(0, 100) + '...' : 'NONE',
         track: activeTrack ? activeTrack.username : null,
       });
+
       if (channelName !== activeChannel) {
         preloadedUrl = null;
         preloadedTrack = null;
       } else {
+        if (!player.paused && player.currentTime > 0.5) {
+          console.warn('[AUDIO] Ignored transient error during active playback');
+          return;
+        }
         emit('error', { channel: channelName, error: player.error, track: activeTrack });
       }
     });

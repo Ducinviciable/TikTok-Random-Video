@@ -25,6 +25,8 @@ const state = {
   toastTimer: null,
   specRAF: null,
   specCanvas: null,
+  healingPending: 0,
+  healingHealed: 0,
 };
 
 const $ = id => document.getElementById(id);
@@ -35,6 +37,8 @@ const dom = {
   statTotal:      $('stat-total'),
   statOffline:    $('stat-offline'),
   statBanned:     $('stat-banned'),
+  statHealingPending: $('stat-healing-pending'),
+  statHealingHealed:  $('stat-healing-healed'),
   nowCreator:     $('now-creator'),
   nowTitle:       $('now-title'),
   originalLink:   $('original-link'),
@@ -157,6 +161,8 @@ function refreshUI() {
   if (dom.statTotal)   dom.statTotal.textContent   = state.tracks.filter(t => !state.blacklisted.has(t.id)).length;
   if (dom.statOffline) dom.statOffline.textContent = state.offlineSet.size;
   if (dom.statBanned)  dom.statBanned.textContent  = state.bannedFromStorage + state.blacklisted.size;
+  if (dom.statHealingPending) dom.statHealingPending.textContent = state.healingPending || 0;
+  if (dom.statHealingHealed)  dom.statHealingHealed.textContent  = state.healingHealed || 0;
   if (dom.trackCount)  dom.trackCount.textContent  = visible.length + ' video';
 
   dom.playlist.querySelectorAll('.track-card').forEach(el => el.remove());
@@ -315,7 +321,62 @@ function highlightTrack(id) {
   refreshUI();
 }
 
-async function selectAndPlay(id) {
+let skipCooldownTimer = null;
+let lastNavigationTime = 0;
+
+function clearSkipCooldown() {
+  if (skipCooldownTimer) {
+    clearTimeout(skipCooldownTimer);
+    skipCooldownTimer = null;
+  }
+}
+
+function enqueueForHealing(track, reason) {
+  if (!track || !track.canonicalUrl) return;
+  if (typeof chrome === 'undefined' || !chrome.runtime) return;
+  chrome.runtime.sendMessage(
+    { action: 'enqueueForHealing', canonicalUrl: track.canonicalUrl, reason },
+    () => {
+      if (chrome.runtime.lastError) return;
+      refreshHealingStats();
+    },
+  );
+}
+
+function refreshHealingStats() {
+  if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+  chrome.storage.local.get(['healingQueue'], (data) => {
+    const queue = data.healingQueue || [];
+    state.healingPending = queue.filter((e) => e.status === 'pending').length;
+    state.healingHealed = queue.filter((e) => e.status === 'healed').length;
+    if (dom.statHealingPending) dom.statHealingPending.textContent = state.healingPending;
+    if (dom.statHealingHealed)  dom.statHealingHealed.textContent  = state.healingHealed;
+  });
+}
+
+function scheduleAutoSkip(targetTrackId) {
+  clearSkipCooldown();
+  skipCooldownTimer = setTimeout(() => {
+    skipCooldownTimer = null;
+    if (window.PlayerAudio && PlayerAudio.isPlaying() && PlayerAudio.getCurrentTime() > 0.5) {
+      console.log('[APP] Skip cancelled: audio is playing normally');
+      return;
+    }
+    if (targetTrackId && state.activeId !== targetTrackId) {
+      return;
+    }
+    nextTrack(true);
+  }, 3500);
+}
+
+async function selectAndPlay(id, isAuto = false) {
+  const now = Date.now();
+  if (isAuto && (now - lastNavigationTime < 2000)) {
+    return;
+  }
+  lastNavigationTime = now;
+
+  clearSkipCooldown();
   const track = state.tracks.find(t => t.id === id);
   if (!track) return;
 
@@ -324,6 +385,7 @@ async function selectAndPlay(id) {
 }
 
 async function startPlayback(track) {
+  clearSkipCooldown();
   state.playing = true;
   state.activeId = track.id;
 
@@ -349,14 +411,16 @@ async function startPlayback(track) {
     if (window.PlayerAudio) {
       const ok = await PlayerAudio.playTrack(cdnResult.cdnUrl, track);
       if (ok) {
+        clearSkipCooldown();
         showToast(`🎧 Đang phát: ${track.username}`);
         triggerNextPreload(track);
       } else {
         if (window.PlayerCDN) {
           PlayerCDN.invalidateCdnCache(track.canonicalUrl);
         }
+        enqueueForHealing(track, 'playback_failed');
         showToast(`⚠️ Không thể phát video của ${track.username}, thử bài kế tiếp`);
-        setTimeout(() => nextTrack(), 1200);
+        scheduleAutoSkip(track.id);
       }
     }
   } else {
@@ -364,8 +428,9 @@ async function startPlayback(track) {
       PlayerCDN.invalidateCdnCache(track.canonicalUrl);
     }
     console.warn('[APP] CDN refresh unavailable for:', track.canonicalUrl, cdnResult ? cdnResult.error : '');
+    enqueueForHealing(track, 'cdn_expired');
     showToast(`⚠️ Không thể phát video của ${track.username}, thử bài kế tiếp`);
-    setTimeout(() => nextTrack(), 1200);
+    scheduleAutoSkip(track.id);
   }
 
   updateMediaSession(track);
@@ -473,14 +538,14 @@ function resumePlayState() {
   }
 }
 
-function nextTrack() {
+function nextTrack(isAuto = false) {
   const next = getNextTrackToPlay();
-  if (next) selectAndPlay(next.id);
+  if (next) selectAndPlay(next.id, isAuto);
 }
 
 function previousTrack() {
   const prev = getPrevTrackToPlay();
-  if (prev) selectAndPlay(prev.id);
+  if (prev) selectAndPlay(prev.id, false);
 }
 
 function visibleTracks() {
@@ -883,6 +948,9 @@ function initAudioEventListeners() {
   if (!window.PlayerAudio) return;
 
   PlayerAudio.on('timeupdate', ({ currentTime, duration, progressPct }) => {
+    if (currentTime > 0.3) {
+      clearSkipCooldown();
+    }
     state.progressPct = progressPct;
     if (dom.timelineFill) dom.timelineFill.style.width = progressPct + '%';
     if (dom.seekRange)    dom.seekRange.value = progressPct;
@@ -890,6 +958,10 @@ function initAudioEventListeners() {
     if (dom.timeTotal && duration > 0) {
       dom.timeTotal.textContent = formatTime(duration);
     }
+  });
+
+  PlayerAudio.on('play', () => {
+    clearSkipCooldown();
   });
 
   PlayerAudio.on('preloadNeeded', async () => {
@@ -904,6 +976,7 @@ function initAudioEventListeners() {
   });
 
   PlayerAudio.on('trackChanged', ({ track }) => {
+    clearSkipCooldown();
     if (track) {
       highlightTrack(track.id);
       updateMediaSession(track);
@@ -913,31 +986,45 @@ function initAudioEventListeners() {
   });
 
   PlayerAudio.on('ended', () => {
-    if (skipCooldownTimer) {
-      clearTimeout(skipCooldownTimer);
-      skipCooldownTimer = null;
-    }
+    clearSkipCooldown();
     handleTrackEnded();
   });
 
-  let skipCooldownTimer = null;
   PlayerAudio.on('error', ({ track, error }) => {
     console.warn('[APP] PlayerAudio error on track:', track ? track.username : 'unknown', error);
+    if (window.PlayerAudio && PlayerAudio.isPlaying() && PlayerAudio.getCurrentTime() > 0.5) {
+      console.log('[APP] Suppressing error skip - track is playing');
+      return;
+    }
     if (track && window.PlayerCDN) {
       PlayerCDN.invalidateCdnCache(track.canonicalUrl);
     }
     const isStalled = error && (error.message && error.message.includes('stalled'));
+    enqueueForHealing(track, isStalled ? 'playback_stalled' : 'stream_error');
     const trackName = track && track.username ? track.username : 'bài hát này';
     const msg = isStalled
       ? `⚠️ Luồng phát của ${trackName} bị đứng quá lâu → Tự chuyển bài...`
       : `⚠️ Không thể phát ${trackName}, đang chuyển bài kế tiếp...`;
     showToast(msg);
-    if (skipCooldownTimer) clearTimeout(skipCooldownTimer);
-    skipCooldownTimer = setTimeout(() => {
-      skipCooldownTimer = null;
-      nextTrack();
-    }, 1200);
+    scheduleAutoSkip(track ? track.id : null);
   });
+
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.healingQueue) return;
+      refreshHealingStats();
+      const newQueue = changes.healingQueue.newValue || [];
+      const healedEntries = newQueue.filter((e) => e.status === 'healed' && e.newCdnUrl);
+      for (const entry of healedEntries) {
+        const track = state.tracks.find((t) => t.canonicalUrl === entry.url);
+        if (track && window.PlayerCDN) {
+          // Silently update the CDN cache with the refreshed URL
+          PlayerCDN.invalidateCdnCache(entry.url);
+          console.log('[APP] 🩹 Healing: CDN cache refreshed for', track.username);
+        }
+      }
+    });
+  }
 }
 
 Object.assign(window, {
@@ -956,3 +1043,4 @@ initUIEventListeners();
 initAudioEventListeners();
 refreshUI();
 tryLoadFromStorage();
+refreshHealingStats();
