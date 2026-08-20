@@ -25,6 +25,8 @@ const state = {
   toastTimer: null,
   specRAF: null,
   specCanvas: null,
+  healingPending: 0,
+  healingHealed: 0,
 };
 
 const $ = id => document.getElementById(id);
@@ -35,6 +37,8 @@ const dom = {
   statTotal:      $('stat-total'),
   statOffline:    $('stat-offline'),
   statBanned:     $('stat-banned'),
+  statHealingPending: $('stat-healing-pending'),
+  statHealingHealed:  $('stat-healing-healed'),
   nowCreator:     $('now-creator'),
   nowTitle:       $('now-title'),
   originalLink:   $('original-link'),
@@ -157,6 +161,8 @@ function refreshUI() {
   if (dom.statTotal)   dom.statTotal.textContent   = state.tracks.filter(t => !state.blacklisted.has(t.id)).length;
   if (dom.statOffline) dom.statOffline.textContent = state.offlineSet.size;
   if (dom.statBanned)  dom.statBanned.textContent  = state.bannedFromStorage + state.blacklisted.size;
+  if (dom.statHealingPending) dom.statHealingPending.textContent = state.healingPending || 0;
+  if (dom.statHealingHealed)  dom.statHealingHealed.textContent  = state.healingHealed || 0;
   if (dom.trackCount)  dom.trackCount.textContent  = visible.length + ' video';
 
   dom.playlist.querySelectorAll('.track-card').forEach(el => el.remove());
@@ -330,8 +336,22 @@ function enqueueForHealing(track, reason) {
   if (typeof chrome === 'undefined' || !chrome.runtime) return;
   chrome.runtime.sendMessage(
     { action: 'enqueueForHealing', canonicalUrl: track.canonicalUrl, reason },
-    () => { if (chrome.runtime.lastError) {} },
+    () => {
+      if (chrome.runtime.lastError) return;
+      refreshHealingStats();
+    },
   );
+}
+
+function refreshHealingStats() {
+  if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+  chrome.storage.local.get(['healingQueue'], (data) => {
+    const queue = data.healingQueue || [];
+    state.healingPending = queue.filter((e) => e.status === 'pending').length;
+    state.healingHealed = queue.filter((e) => e.status === 'healed').length;
+    if (dom.statHealingPending) dom.statHealingPending.textContent = state.healingPending;
+    if (dom.statHealingHealed)  dom.statHealingHealed.textContent  = state.healingHealed;
+  });
 }
 
 function scheduleAutoSkip(targetTrackId) {
@@ -992,6 +1012,7 @@ function initAudioEventListeners() {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes.healingQueue) return;
+      refreshHealingStats();
       const newQueue = changes.healingQueue.newValue || [];
       const healedEntries = newQueue.filter((e) => e.status === 'healed' && e.newCdnUrl);
       for (const entry of healedEntries) {
@@ -1022,3 +1043,4 @@ initUIEventListeners();
 initAudioEventListeners();
 refreshUI();
 tryLoadFromStorage();
+refreshHealingStats();

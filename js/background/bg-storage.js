@@ -255,6 +255,16 @@ const HEALING_MAX_ENTRIES = 50;
 const HEALING_MAX_RETRIES = 3;
 const HEALING_CLEANUP_AGE_MS = 24 * 60 * 60 * 1000;
 
+function isMatchingTikTokVideo(url1, url2) {
+  if (!url1 || !url2) return false;
+  const match1 = url1.match(/\/video\/(\d+)/) || url1.match(/\/v\/(\d+)/);
+  const match2 = url2.match(/\/video\/(\d+)/) || url2.match(/\/v\/(\d+)/);
+  if (match1 && match2 && match1[1] === match2[1]) return true;
+  const clean1 = url1.split("?")[0].split("#")[0].replace(/\/$/, "").toLowerCase();
+  const clean2 = url2.split("?")[0].split("#")[0].replace(/\/$/, "").toLowerCase();
+  return clean1 === clean2;
+}
+
 async function _getHealingQueue() {
   const data = await chrome.storage.local.get(["healingQueue"]);
   return data.healingQueue || [];
@@ -272,7 +282,7 @@ async function handleEnqueueForHealing(request) {
 
   let queue = await _getHealingQueue();
 
-  const existing = queue.find((e) => e.url === canonicalUrl);
+  const existing = queue.find((e) => isMatchingTikTokVideo(e.url, canonicalUrl));
   if (existing) {
     if (existing.retryCount >= HEALING_MAX_RETRIES || existing.status === "dead") {
       return { success: false, error: "Max retries or dead" };
@@ -303,7 +313,7 @@ async function handleHealVideo(request) {
   if (!canonicalUrl) return { success: false };
 
   const queue = await _getHealingQueue();
-  const idx = queue.findIndex((e) => e.url === canonicalUrl);
+  const idx = queue.findIndex((e) => isMatchingTikTokVideo(e.url, canonicalUrl));
   if (idx === -1) return { success: false, error: "Not in queue" };
 
   queue[idx].status = "healed";
@@ -325,7 +335,7 @@ async function handleMarkHealingDead(request) {
   if (!canonicalUrl) return { success: false };
 
   const queue = await _getHealingQueue();
-  const idx = queue.findIndex((e) => e.url === canonicalUrl);
+  const idx = queue.findIndex((e) => isMatchingTikTokVideo(e.url, canonicalUrl));
   if (idx !== -1) {
     queue[idx].status = "dead";
     await _saveHealingQueue(queue);

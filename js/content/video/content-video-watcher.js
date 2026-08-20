@@ -1,6 +1,16 @@
 // Module: content-video-watcher.js
 // Responsibilities: Video Element Discovery, Buffer/Play Configuration, Event Listeners, Loop Guardian, Video Watcher Initializer
 
+function isMatchingTikTokVideo(url1, url2) {
+  if (!url1 || !url2) return false;
+  const match1 = url1.match(/\/video\/(\d+)/) || url1.match(/\/v\/(\d+)/);
+  const match2 = url2.match(/\/video\/(\d+)/) || url2.match(/\/v\/(\d+)/);
+  if (match1 && match2 && match1[1] === match2[1]) return true;
+  const clean1 = url1.split("?")[0].split("#")[0].replace(/\/$/, "").toLowerCase();
+  const clean2 = url2.split("?")[0].split("#")[0].replace(/\/$/, "").toLowerCase();
+  return clean1 === clean2;
+}
+
 function watchForVideoElement() {
   const videos = document.querySelectorAll("video");
   if (videos.length === 0) return;
@@ -52,7 +62,6 @@ function watchForVideoElement() {
   console.log("[CS] Chuyển sang video mới");
 
   _checkAndHealVideo(currentVideoElement);
-
 
   // Force aggressive buffering + immediate playback attempt
   currentVideoElement.setAttribute("preload", "auto");
@@ -224,7 +233,7 @@ function _checkAndHealVideo(videoEl) {
     if (data.healingEnabled === false) return;
     const queue = data.healingQueue || [];
     const entry = queue.find(
-      (e) => e.url === canonicalUrl && e.status === "pending",
+      (e) => isMatchingTikTokVideo(e.url, canonicalUrl) && e.status === "pending",
     );
     if (!entry) return;
 
@@ -246,21 +255,25 @@ function _checkAndHealVideo(videoEl) {
       return;
     }
 
-    // Wait for the video element to have a valid playable CDN src
     var attempts = 0;
     var pollInterval = setInterval(function () {
       attempts++;
-      var src = videoEl ? (videoEl.currentSrc || videoEl.src || "") : "";
-      var isValidSrc =
-        src &&
-        !src.startsWith("blob:") &&
-        !src.startsWith("data:") &&
-        src.includes("http");
 
-      if (isValidSrc) {
+      var liveEl = currentVideoElement || videoEl || document.querySelector("video");
+      var isHealed =
+        liveEl &&
+        !liveEl.error &&
+        (liveEl.readyState >= 2 || liveEl.currentTime > 0 || (liveEl.duration > 0 && !liveEl.paused));
+
+      if (isHealed) {
         clearInterval(pollInterval);
+        var rawSrc = liveEl.currentSrc || liveEl.src || "";
+        var directCdnUrl =
+          rawSrc && !rawSrc.startsWith("blob:") && !rawSrc.startsWith("data:") && rawSrc.startsWith("http")
+            ? rawSrc
+            : null;
         chrome.runtime.sendMessage(
-          { action: "healVideo", canonicalUrl, newCdnUrl: src },
+          { action: "healVideo", canonicalUrl, newCdnUrl: directCdnUrl },
           function () {
             if (chrome.runtime.lastError) {}
           },
@@ -271,10 +284,9 @@ function _checkAndHealVideo(videoEl) {
         return;
       }
 
-      if (attempts >= 20) {
+      if (attempts >= 30) {
         clearInterval(pollInterval);
       }
     }, 500);
   });
 }
-

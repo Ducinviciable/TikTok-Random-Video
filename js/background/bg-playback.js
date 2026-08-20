@@ -52,22 +52,27 @@ async function selectRandomVideo(excludeUrl = "") {
     normalVideosPlayedCount = playedCountData.normalVideosPlayedCount || 0;
 
     if (normalVideosPlayedCount >= 3) {
-      const pendingUrls = new Set(pendingHealingVideos.map((e) => e.url));
-      
       // Try unplayed pool first
-      let matchingVideos = unplayedPool.filter(
-        (v) => pendingUrls.has(getUrl(v).split("?")[0])
-      );
-      
+      let matchingVideos = unplayedPool.filter((v) => {
+        const vUrl = getUrl(v);
+        return pendingHealingVideos.some((h) => isMatchingTikTokVideo(h.url, vUrl));
+      });
+
       if (matchingVideos.length === 0) {
         // Fallback to played pool
-        matchingVideos = pool.filter(
-          (v) => pendingUrls.has(getUrl(v).split("?")[0])
-        );
+        matchingVideos = pool.filter((v) => {
+          const vUrl = getUrl(v);
+          return pendingHealingVideos.some((h) => isMatchingTikTokVideo(h.url, vUrl));
+        });
       }
 
       if (matchingVideos.length > 0) {
         selectedVideo = matchingVideos[Math.floor(Math.random() * matchingVideos.length)];
+        isHealPick = true;
+      } else if (pendingHealingVideos.length > 0) {
+        // Direct pick from queue if not found in pool
+        const healEntry = pendingHealingVideos[Math.floor(Math.random() * pendingHealingVideos.length)];
+        selectedVideo = { url: healEntry.url, thumb: "" };
         isHealPick = true;
       }
     }
@@ -94,7 +99,7 @@ async function selectRandomVideo(excludeUrl = "") {
 
   // Update retryCount if this was a healing pick
   if (isHealPick && healingQueue.length > 0) {
-    const idx = healingQueue.findIndex((e) => e.url === selectedCanonical);
+    const idx = healingQueue.findIndex((e) => isMatchingTikTokVideo(e.url, selectedCanonical));
     if (idx !== -1) {
       healingQueue[idx].retryCount += 1;
       healingQueue[idx].lastRetryAt = Date.now();

@@ -288,6 +288,14 @@ a:hover {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
+  margin-bottom: 6px;
+}
+
+.stat-grid-healing {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
   margin-bottom: 10px;
 }
 
@@ -323,6 +331,22 @@ a:hover {
 
 .stat-pink {
   background: rgba(253, 235, 244, 0.65);
+}
+
+.stat-amber {
+  background: rgba(254, 243, 199, 0.65);
+}
+
+.stat-amber strong {
+  color: #d97706;
+}
+
+.stat-emerald {
+  background: rgba(236, 253, 245, 0.65);
+}
+
+.stat-emerald strong {
+  color: #059669;
 }
 
 .tabs {
