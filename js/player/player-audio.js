@@ -4,7 +4,7 @@
   const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
   const EQ_PRESETS = {
     'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    'Bass Boost': [9, 7, 5, 3, 2, 1, 0, 0, -1, -2],
+    'Bass Boost': [3, 4, 5, 4, 2, 1, 0, 0, 0, 0],
     'Vocal': [-2, -1, 0, 2, 4, 5, 4, 3, 1, 0],
     'Electronic': [4, 3, 2, 0, -1, 2, 4, 5, 3, 2],
     'Lofi': [2, 2, 1, 0, -1, -1, -2, -2, -1, 0],
@@ -21,6 +21,8 @@
   let gainB = null;
 
   let preMixGain = null;
+  let dspBranchGain = null;
+  let directBranchGain = null;
   let eqFilters = [];
   let bassBoostNode = null;
   let compressorNode = null;
@@ -39,6 +41,7 @@
   let crossfadeDuration = 2.5;
   let bassBoostGain = 0;
   let normalizerEnabled = true;
+  let pureDirectEnabled = false;
   let masterVolume = 1.0;
   let volumeBooster = 1.0;
   let isMuted = false;
@@ -107,6 +110,14 @@
       gainA.connect(preMixGain);
       gainB.connect(preMixGain);
 
+      dspBranchGain = audioCtx.createGain();
+      directBranchGain = audioCtx.createGain();
+      dspBranchGain.gain.value = pureDirectEnabled ? 0.0 : 1.0;
+      directBranchGain.gain.value = pureDirectEnabled ? 1.0 : 0.0;
+
+      preMixGain.connect(dspBranchGain);
+      preMixGain.connect(directBranchGain);
+
       eqFilters = EQ_FREQUENCIES.map((freq, idx) => {
         const filter = audioCtx.createBiquadFilter();
         if (idx === 0) {
@@ -122,7 +133,7 @@
         return filter;
       });
 
-      let lastNode = preMixGain;
+      let lastNode = dspBranchGain;
       eqFilters.forEach(filter => {
         lastNode.connect(filter);
         lastNode = filter;
@@ -161,7 +172,9 @@
 
       masterGainNode = audioCtx.createGain();
       masterGainNode.gain.value = masterVolume * volumeBooster;
+
       postDSPCrossover.connect(masterGainNode);
+      directBranchGain.connect(masterGainNode);
 
       analyserNode = audioCtx.createAnalyser();
       analyserNode.fftSize = 128;
@@ -626,6 +639,94 @@
     return activeTrack;
   }
 
+  function setPureDirect(enabled) {
+    pureDirectEnabled = Boolean(enabled);
+    if (dspBranchGain && directBranchGain && audioCtx) {
+      dspBranchGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      directBranchGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      dspBranchGain.gain.setValueAtTime(pureDirectEnabled ? 0.0 : 1.0, audioCtx.currentTime);
+      directBranchGain.gain.setValueAtTime(pureDirectEnabled ? 1.0 : 0.0, audioCtx.currentTime);
+    }
+    return pureDirectEnabled;
+  }
+
+  function isPureDirect() {
+    return pureDirectEnabled;
+  }
+
+  function getVolumeBooster() {
+    return volumeBooster;
+  }
+
+  function getAudioMetrics() {
+    initAudioContext();
+    const metrics = {
+      timestamp: new Date().toISOString(),
+      activeChannel,
+      track: activeTrack ? { username: activeTrack.username, id: activeTrack.id, canonicalUrl: activeTrack.canonicalUrl } : null,
+      currentTime: getCurrentTime().toFixed(2) + 's',
+      duration: getDuration().toFixed(2) + 's',
+      isPlaying: isPlaying(),
+      dspState: {
+        pureDirect: pureDirectEnabled,
+        normalizerEnabled,
+        bassBoostGain: bassBoostGain + ' dB',
+        masterVolume: Math.round(masterVolume * 100) + '%',
+        volumeBooster: volumeBooster.toFixed(2) + 'x',
+        compressorReductionDb: compressorNode ? Number(compressorNode.reduction).toFixed(2) + ' dB' : '0 dB',
+      },
+      signalLevels: {
+        peakDbfs: -99,
+        rmsDbfs: -99,
+      },
+    };
+
+    if (analyserNode && isPlaying()) {
+      const bufferLength = analyserNode.frequencyBinCount;
+      const timeData = new Float32Array(bufferLength);
+      analyserNode.getFloatTimeDomainData(timeData);
+
+      let sumSquares = 0;
+      let peak = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const val = Math.abs(timeData[i]);
+        if (val > peak) peak = val;
+        sumSquares += val * val;
+      }
+      const rms = Math.sqrt(sumSquares / bufferLength);
+
+      const peakDb = peak > 0 ? 20 * Math.log10(peak) : -99;
+      const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -99;
+
+      metrics.signalLevels.peakDbfs = Number(peakDb.toFixed(1));
+      metrics.signalLevels.rmsDbfs = Number(rmsDb.toFixed(1));
+    }
+
+    return metrics;
+  }
+
+  function logAudioDiagnostics() {
+    const m = getAudioMetrics();
+    console.group('%c🎵 [TIKTOK HI-FI STUDIO] Audio Metrics & DSP Diagnostics', 'color: #8b9cf6; font-weight: bold; font-size: 13px;');
+    console.log('%c📍 Video:', 'font-weight: bold;', m.track ? `${m.track.username} (${m.track.id})` : 'None');
+    console.log('%c⏱️ Position:', 'font-weight: bold;', `${m.currentTime} / ${m.duration} (Playing: ${m.isPlaying})`);
+    console.table({
+      'Master Volume': m.dspState.masterVolume,
+      'Volume Booster': m.dspState.volumeBooster,
+      'Pure Direct (Bypass)': m.dspState.pureDirect ? 'ON (1:1 Bit-perfect)' : 'OFF',
+      'Volume Normalizer': m.dspState.normalizerEnabled ? 'ON' : 'OFF',
+      'Compressor Reduction': m.dspState.compressorReductionDb,
+      'Bass Boost': m.dspState.bassBoostGain,
+      'RMS Level': m.signalLevels.rmsDbfs + ' dBFS',
+      'Peak Level': m.signalLevels.peakDbfs + ' dBFS',
+    });
+    console.log('%c💡 Tip: Chạy getAudioDiagnostics() bất kỳ lúc nào để đo lường RMS và độ lợi dải âm.', 'color: #7fe0f5;');
+    console.groupEnd();
+    return m;
+  }
+
+  window.getAudioDiagnostics = logAudioDiagnostics;
+
   window.PlayerAudio = {
     init: initAudioContext,
     playTrack,
@@ -637,12 +738,17 @@
     seekPercent,
     setVolume,
     setVolumeBooster,
+    getVolumeBooster,
+    setPureDirect,
+    isPureDirect,
     toggleMute,
     setBassBoost,
     setNormalizer,
     setCrossfadeDuration,
     setEqBand,
     setEqPreset,
+    getAudioMetrics,
+    logAudioDiagnostics,
     getAudioContext,
     getAnalyserNode,
     getCurrentTime,

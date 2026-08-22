@@ -205,18 +205,34 @@
 
         <div class="dsp-scroll">
 
-          <div class="control-row">
-            <div>
-              <strong>Volume normalizer</strong>
-              <span>Cân bằng âm lượng tự động</span>
+          <div class="control-row sound-mode-row" id="sound-mode-row">
+            <div class="sound-mode-info">
+              <strong id="sound-mode-title">Chế độ âm thanh</strong>
             </div>
-            <button class="switch-control on" id="normalizer-btn" aria-label="Volume normalizer on">
-              <span></span>
-            </button>
+            <div class="mode-toggle sound-mode-toggle" role="group" aria-label="Chế độ xử lý âm thanh">
+              <button class="active" id="btn-mode-hifi" data-mode="hifi" aria-pressed="true"
+                title="Hi-Fi DSP Engine: Tự động cân bằng âm lượng (Volume Normalizer) và xử lý EQ">Hi-Fi DSP</button>
+              <button id="btn-mode-direct" data-mode="direct" aria-pressed="false"
+                title="Pure Direct: Phát âm thanh mộc 1:1, bỏ qua toàn bộ xử lý DSP">Pure Direct</button>
+            </div>
           </div>
 
 
-          <div class="dsp-control">
+          <div class="dsp-control" id="booster-control">
+            <div class="control-title">
+              <span>Volume booster</span>
+              <strong id="booster-label">1.0x (Chuẩn)</strong>
+            </div>
+            <div class="booster-buttons" role="group" aria-label="Khuếch đại âm lượng">
+              <button class="booster-btn active" data-boost="1.0">1.0x</button>
+              <button class="booster-btn" data-boost="1.25">1.25x</button>
+              <button class="booster-btn" data-boost="1.5">1.5x</button>
+              <button class="booster-btn" data-boost="2.0">2.0x</button>
+            </div>
+          </div>
+
+
+          <div class="dsp-control" id="bass-control">
             <div class="control-title">
               <span>Bass boost</span>
               <strong id="bass-label">0 dB</strong>
@@ -287,7 +303,10 @@
             <img id="now-thumb-img" src="" alt="" hidden>
           </div>
           <div class="now-playing-text">
-            <span>Đang phát</span>
+            <div class="now-playing-header">
+              <span>Đang phát</span>
+              <span class="source-badge" id="source-badge" title="Nguồn giải mã media">TIKWM PROXY</span>
+            </div>
             <strong id="now-bar-title">Chưa có bài nào</strong>
             <small id="now-bar-creator">—</small>
           </div>

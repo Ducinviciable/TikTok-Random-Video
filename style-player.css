@@ -972,6 +972,35 @@ a:hover {
   backdrop-filter: blur(8px);
 }
 
+.sound-mode-row {
+  padding: 8px 10px;
+  gap: 8px;
+}
+
+.sound-mode-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sound-mode-info strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.sound-mode-toggle {
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 9px;
+}
+
+.sound-mode-toggle button {
+  padding: 4px 8px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
 .control-row strong {
   display: block;
   font-size: 11px;
@@ -1031,6 +1060,44 @@ a:hover {
   color: #6978dc;
   font-size: 11px;
   font-weight: 600;
+}
+
+.booster-buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.booster-btn {
+  flex: 1;
+  padding: 5px 2px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--foreground);
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.booster-btn:hover {
+  background: rgba(255, 255, 255, 0.75);
+  transform: translateY(-1px);
+}
+
+.booster-btn.active {
+  background: linear-gradient(135deg, #8b9cf6, #7fe0f5);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(139, 156, 246, 0.35);
+}
+
+.dsp-bypassed {
+  opacity: 0.42;
+  pointer-events: none;
+  filter: grayscale(0.5);
+  transition: opacity 0.25s, filter 0.25s;
 }
 
 .range {
@@ -1217,12 +1284,44 @@ a:hover {
   z-index: 1;
 }
 
+.now-playing-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .now-playing-text span {
   display: block;
   font-size: 8px;
   color: var(--muted-fg);
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+.source-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(139, 156, 246, 0.16);
+  color: #6375d6;
+  border: 1px solid rgba(139, 156, 246, 0.28);
+  line-height: 1.2;
+}
+
+.source-badge.badge-direct {
+  background: rgba(104, 207, 153, 0.18);
+  color: #248a54;
+  border-color: rgba(104, 207, 153, 0.35);
+}
+
+.source-badge.badge-cached {
+  background: rgba(127, 224, 245, 0.18);
+  color: #17839b;
+  border-color: rgba(127, 224, 245, 0.35);
 }
 
 .now-playing-text strong {

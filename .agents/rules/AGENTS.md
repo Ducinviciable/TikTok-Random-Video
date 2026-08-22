@@ -33,6 +33,8 @@ Before outputting code edits, verify:
 - [ ] Does this change risk breaking any existing functionality?
 - [ ] Could this trigger Akamai/TikTok WAF bot detection?
 - [ ] Are all bracket pairs (`{}`) balanced? (Always verify with `node -c <file>`).
+- [ ] Are all identifiers in `Object.assign(window, { ... })` in `player-app.js` strictly defined in scope? (Avoid `ReferenceError` blocking initialization).
+- [ ] Are all event handlers attached in JS without inline `onclick`/`onerror` in HTML (CSP compliance)?
 
 ---
 

@@ -2,7 +2,7 @@
 
 const EQ_PRESETS = window.PlayerAudio ? PlayerAudio.EQ_PRESETS : {
   'Flat':         [ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
-  'Bass Boost':   [ 9,  7,  5,  3,  2,  1,  0,  0, -1, -2],
+  'Bass Boost':   [ 3,  4,  5,  4,  2,  1,  0,  0,  0,  0],
   'Vocal':        [-2, -1,  0,  2,  4,  5,  4,  3,  1,  0],
   'Electronic':   [ 4,  3,  2,  0, -1,  2,  4,  5,  3,  2],
   'Lofi':         [ 2,  2,  1,  0, -1, -1, -2, -2, -1,  0],
@@ -56,6 +56,7 @@ const dom = {
   nowThumbImg:    $('now-thumb-img'),
   nowBarTitle:    $('now-bar-title'),
   nowBarCreator:  $('now-bar-creator'),
+  sourceBadge:    $('source-badge'),
   seekRange:      $('seek-range'),
   volumeRange:    $('volume-range'),
   searchInput:    $('search-input'),
@@ -68,6 +69,7 @@ const dom = {
   eqPreset:       $('eq-preset'),
   bassRange:      $('bass-range'),
   bassLabel:      $('bass-label'),
+  bassControl:    $('bass-control'),
   crossfadeRange: $('crossfade-range'),
   crossfadeLabel: $('crossfade-label'),
   btnShuffle:     $('btn-shuffle'),
@@ -75,7 +77,11 @@ const dom = {
   btnVinyl:       $('btn-vinyl'),
   btnSpectrum:    $('btn-spectrum'),
   visualizerArea: $('visualizer-area'),
-  normalizerBtn:  $('normalizer-btn'),
+  soundModeRow:   $('sound-mode-row'),
+  soundModeTitle: $('sound-mode-title'),
+  btnModeHifi:    $('btn-mode-hifi'),
+  btnModeDirect:  $('btn-mode-direct'),
+  boosterLabel:   $('booster-label'),
   tabPlaylist:    $('tab-playlist'),
   tabOffline:     $('tab-offline'),
   btnShuffleLib:  $('btn-shuffle-library'),
@@ -497,6 +503,7 @@ async function startPlayback(track) {
       const ok = await PlayerAudio.playTrack(cdnResult.cdnUrl, track);
       if (ok) {
         clearSkipCooldown();
+        updateSourceBadge(cdnResult.source, cdnResult.fromCache);
         console.info(`[STREAM-RESOLVER] 🚀 ${track.username} -> source: ${cdnResult.source || 'direct'} (${cdnResult.fromCache ? 'RAM cache' : 'fresh fetch'})`);
         showToast(`🎧 Đang phát: ${track.username}`);
         triggerNextPreload(track);
@@ -876,12 +883,59 @@ function applyPreset(name) {
   if (window.PlayerAudio) PlayerAudio.setEqPreset(name);
 }
 
-function toggleNormalizer(btn) {
-  btn.classList.toggle('on');
-  const isOn = btn.classList.contains('on');
-  btn.setAttribute('aria-label', `Volume normalizer ${isOn ? 'on' : 'off'}`);
-  if (window.PlayerAudio) PlayerAudio.setNormalizer(isOn);
-  showToast(`Volume Normalizer: ${isOn ? 'BẬT' : 'TẮT'}`);
+function setSoundMode(mode) {
+  const isDirect = mode === 'direct';
+  if (dom.btnModeHifi) {
+    dom.btnModeHifi.classList.toggle('active', !isDirect);
+    dom.btnModeHifi.setAttribute('aria-pressed', String(!isDirect));
+  }
+  if (dom.btnModeDirect) {
+    dom.btnModeDirect.classList.toggle('active', isDirect);
+    dom.btnModeDirect.setAttribute('aria-pressed', String(isDirect));
+  }
+
+  if (window.PlayerAudio) {
+    PlayerAudio.setPureDirect(isDirect);
+    if (!isDirect) {
+      PlayerAudio.setNormalizer(true);
+    }
+  }
+
+  const dspControls = [dom.bassControl, dom.eqSliders, dom.eqPreset ? dom.eqPreset.parentElement : null];
+  dspControls.forEach(el => {
+    if (el) el.classList.toggle('dsp-bypassed', isDirect);
+  });
+
+  showToast(isDirect ? 'Chế độ: Pure Direct (Mộc 1:1)' : 'Chế độ: Hi-Fi DSP (Đầy đặn & Cân bằng)');
+}
+
+function updateBooster(mult, clickedBtn) {
+  const val = parseFloat(mult) || 1.0;
+  if (window.PlayerAudio) PlayerAudio.setVolumeBooster(val);
+  if (dom.boosterLabel) {
+    dom.boosterLabel.textContent = val === 1.0 ? '1.0x (Chuẩn)' : `${val.toFixed(2)}x (+${((val - 1) * 6).toFixed(1)} dB)`;
+  }
+  document.querySelectorAll('.booster-btn').forEach(btn => {
+    btn.classList.toggle('active', btn === clickedBtn || parseFloat(btn.dataset.boost) === val);
+  });
+  showToast(`Volume Booster: ${val.toFixed(2)}x`);
+}
+
+function updateSourceBadge(source, fromCache) {
+  if (!dom.sourceBadge) return;
+  dom.sourceBadge.className = 'source-badge';
+  if (fromCache) {
+    dom.sourceBadge.textContent = 'RAM CACHED';
+    dom.sourceBadge.classList.add('badge-cached');
+    dom.sourceBadge.title = 'Phát từ bộ nhớ đệm RAM (TTL 20 phút)';
+  } else if (source === 'tiktok-direct') {
+    dom.sourceBadge.textContent = 'DIRECT CDN';
+    dom.sourceBadge.classList.add('badge-direct');
+    dom.sourceBadge.title = 'Luồng giải mã trực tiếp từ CDN TikTok';
+  } else {
+    dom.sourceBadge.textContent = 'TIKWM PROXY';
+    dom.sourceBadge.title = 'Luồng proxy chuẩn AAC 128kbps';
+  }
 }
 
 function updateBass(val) {
@@ -1068,7 +1122,8 @@ function initUIEventListeners() {
   if (dom.tabOffline)  dom.tabOffline.addEventListener('click', () => switchTab('offline'));
   if (dom.btnVinyl)    dom.btnVinyl.addEventListener('click', () => setMode('vinyl'));
   if (dom.btnSpectrum) dom.btnSpectrum.addEventListener('click', () => setMode('spectrum'));
-  if (dom.normalizerBtn) dom.normalizerBtn.addEventListener('click', () => toggleNormalizer(dom.normalizerBtn));
+  if (dom.btnModeHifi) dom.btnModeHifi.addEventListener('click', () => setSoundMode('hifi'));
+  if (dom.btnModeDirect) dom.btnModeDirect.addEventListener('click', () => setSoundMode('direct'));
   if (dom.bassRange) dom.bassRange.addEventListener('input', (e) => updateBass(e.target.value));
   if (dom.crossfadeRange) dom.crossfadeRange.addEventListener('input', (e) => updateCrossfade(e.target.value));
   if (dom.eqPreset) dom.eqPreset.addEventListener('change', (e) => applyPreset(e.target.value));
@@ -1081,6 +1136,10 @@ function initUIEventListeners() {
   if (dom.btnBan) dom.btnBan.addEventListener('click', banCurrentTrack);
   if (dom.volumeRange) dom.volumeRange.addEventListener('input', (e) => updateVolume(e.target.value));
   if (dom.toastClose) dom.toastClose.addEventListener('click', hideToast);
+
+  document.querySelectorAll('.booster-btn').forEach(btn => {
+    btn.addEventListener('click', () => updateBooster(btn.dataset.boost, btn));
+  });
 
   const vinylThumb = document.getElementById('vinyl-thumb');
   if (vinylThumb) {
@@ -1236,7 +1295,7 @@ Object.assign(window, {
   togglePlay, nextTrack, previousTrack,
   toggleShuffle, toggleLoop, banCurrentTrack,
   banTrack, saveOffline, seekTo,
-  setMode, toggleNormalizer, updateBass, updateCrossfade,
+  setMode, setSoundMode, updateBooster, updateBass, updateCrossfade,
   updateVolume, switchTab, hideToast,
   applyPreset, updateEqBand, shuffleLibrary,
 });
