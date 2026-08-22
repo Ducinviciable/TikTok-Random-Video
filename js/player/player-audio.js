@@ -24,6 +24,7 @@
   let eqFilters = [];
   let bassBoostNode = null;
   let compressorNode = null;
+  let makeupGainNode = null;
   let compressorGain = null;
   let bypassGain = null;
   let postDSPCrossover = null;
@@ -36,9 +37,9 @@
   let preloadedUrl = null;
 
   let crossfadeDuration = 2.5;
-  let bassBoostGain = 6;
+  let bassBoostGain = 0;
   let normalizerEnabled = true;
-  let masterVolume = 0.72;
+  let masterVolume = 1.0;
   let volumeBooster = 1.0;
   let isMuted = false;
 
@@ -117,7 +118,7 @@
           filter.Q.value = 1.4;
         }
         filter.frequency.value = freq;
-        filter.gain.value = EQ_PRESETS['Bass Boost'][idx] || 0;
+        filter.gain.value = EQ_PRESETS['Flat'][idx] || 0;
         return filter;
       });
 
@@ -134,11 +135,14 @@
       lastNode.connect(bassBoostNode);
 
       compressorNode = audioCtx.createDynamicsCompressor();
-      compressorNode.threshold.value = -24;
-      compressorNode.knee.value = 30;
-      compressorNode.ratio.value = 4;
-      compressorNode.attack.value = 0.003;
-      compressorNode.release.value = 0.25;
+      compressorNode.threshold.value = -12;
+      compressorNode.knee.value = 15;
+      compressorNode.ratio.value = 2;
+      compressorNode.attack.value = 0.010;
+      compressorNode.release.value = 0.200;
+
+      makeupGainNode = audioCtx.createGain();
+      makeupGainNode.gain.value = 1.496; // +3.5 dB makeup gain
 
       compressorGain = audioCtx.createGain();
       bypassGain = audioCtx.createGain();
@@ -148,7 +152,8 @@
       bypassGain.gain.value = normalizerEnabled ? 0.0 : 1.0;
 
       bassBoostNode.connect(compressorNode);
-      compressorNode.connect(compressorGain);
+      compressorNode.connect(makeupGainNode);
+      makeupGainNode.connect(compressorGain);
       compressorGain.connect(postDSPCrossover);
 
       bassBoostNode.connect(bypassGain);
@@ -309,19 +314,41 @@
       }
     });
 
-    player.addEventListener('error', () => {
+    player.addEventListener('error', async () => {
       const err = player.error;
-      if (!player.src || player.src === '' || (err && err.code === 1)) {
+      const fullSrc = player.currentSrc || player.src || '';
+      if (!fullSrc || (err && err.code === 1)) {
         return;
       }
 
-      console.error('[AUDIO] Player Error:', {
+      const errorCodeNames = {
+        1: 'MEDIA_ERR_ABORTED',
+        2: 'MEDIA_ERR_NETWORK',
+        3: 'MEDIA_ERR_DECODE',
+        4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
+      };
+
+      const errorPayload = {
         code: err ? err.code : 'UNKNOWN',
+        codeName: err ? (errorCodeNames[err.code] || 'UNKNOWN') : 'UNKNOWN',
         message: err ? err.message : '',
         channel: channelName,
-        src: player.src ? player.src.substring(0, 100) + '...' : 'NONE',
+        fullSrc: fullSrc,
         track: activeTrack ? activeTrack.username : null,
-      });
+        httpStatus: null,
+      };
+
+      if (fullSrc.startsWith('http://') || fullSrc.startsWith('https://')) {
+        try {
+          const probe = await fetch(fullSrc, { method: 'HEAD' }).catch(() => null);
+          if (probe) {
+            errorPayload.httpStatus = probe.status;
+            errorPayload.httpStatusText = probe.statusText;
+          }
+        } catch (_) {}
+      }
+
+      console.error('[AUDIO] ❌ Media Playback Error:', errorPayload);
 
       if (channelName !== activeChannel) {
         preloadedUrl = null;
@@ -331,7 +358,7 @@
           console.warn('[AUDIO] Ignored transient error during active playback');
           return;
         }
-        emit('error', { channel: channelName, error: player.error, track: activeTrack });
+        emit('error', { channel: channelName, error: player.error, track: activeTrack, fullSrc, errorPayload });
       }
     });
 
@@ -469,6 +496,7 @@
         fadeOutPlayer.currentTime = 0;
         fadeOutGain.gain.setValueAtTime(0, audioCtx.currentTime);
       } catch (_) { }
+      fadeInGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
       isCrossfading = false;
       crossfadeTimer = null;
     }, duration * 1000 + 100);

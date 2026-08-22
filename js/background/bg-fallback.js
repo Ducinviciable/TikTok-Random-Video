@@ -17,7 +17,13 @@ async function _fetchTikwmStream(canonicalUrl, signal) {
     if (json.code !== 0 || !json.data) return null;
     const cdnUrl = json.data.play || json.data.hdplay || (typeof json.data.music === 'string' ? json.data.music : null);
     if (!cdnUrl) return null;
-    return { ok: true, cdnUrl, title: json.data.title, cover: json.data.cover, source: 'tikwm' };
+    return {
+      ok: true,
+      cdnUrl,
+      title: json.data.title,
+      cover: json.data.cover,
+      source: 'tikwm',
+    };
   } catch (_) {
     return null;
   }
@@ -121,12 +127,12 @@ async function _removeMobileUaRule() {
 }
 
 async function _doSilentFetch(canonicalUrl, videoId, signal) {
-  const maxRetries = 2;
+  const maxRetries = 1;
   let lastError = '';
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
-      const delay = 4000 + Math.random() * 2000;
+      const delay = 1500 + Math.random() * 1000;
       await new Promise(r => setTimeout(r, delay));
     }
 
@@ -147,7 +153,7 @@ async function _doSilentFetch(canonicalUrl, videoId, signal) {
 
       if (response.status === 403) {
         lastError = 'HTTP 403 Forbidden (rate-limited)';
-        continue;
+        break;
       }
 
       if (!response.ok) {
@@ -158,17 +164,18 @@ async function _doSilentFetch(canonicalUrl, videoId, signal) {
       const cdnUrl = _extractCdnFromHtml(html, videoId);
 
       if (cdnUrl) {
-        return { ok: true, cdnUrl };
+        return { ok: true, cdnUrl, source: 'tiktok-direct' };
       }
 
       return { ok: false, error: 'Could not extract CDN stream URL from TikTok HTML' };
     } catch (err) {
       await _removeMobileUaRule();
-      throw err;
+      if (err.name === 'AbortError') throw err;
+      lastError = err.message;
     }
   }
 
-  return { ok: false, error: lastError || 'All retries exhausted' };
+  return { ok: false, error: lastError || 'Silent fetch failed' };
 }
 
 function _extractCdnFromHtml(html, videoId) {

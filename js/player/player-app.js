@@ -20,7 +20,7 @@ const state = {
   shuffled: false,
   looping: false,
   currentMode: 'vinyl',
-  eqValues: [...EQ_PRESETS['Bass Boost']],
+  eqValues: [...EQ_PRESETS['Flat']],
   progressPct: 0,
   toastTimer: null,
   specRAF: null,
@@ -406,8 +406,18 @@ function clearSkipCooldown() {
   }
 }
 
+const recentlyEnqueuedHealing = new Map();
+const HEALING_COOLDOWN_MS = 5 * 60 * 1000;
+
 function enqueueForHealing(track, reason) {
   if (!track || !track.canonicalUrl) return;
+  const now = Date.now();
+  const lastEnqueued = recentlyEnqueuedHealing.get(track.canonicalUrl) || 0;
+  if (now - lastEnqueued < HEALING_COOLDOWN_MS) {
+    return;
+  }
+  recentlyEnqueuedHealing.set(track.canonicalUrl, now);
+
   if (typeof chrome === 'undefined' || !chrome.runtime) return;
   chrome.runtime.sendMessage(
     { action: 'enqueueForHealing', canonicalUrl: track.canonicalUrl, reason },
@@ -476,7 +486,7 @@ async function startPlayback(track) {
   if (window.PlayerCDN) {
     cdnResult = await PlayerCDN.refreshCdnUrl(track.canonicalUrl);
   }
-  console.log('[APP] CDN Result for', track.username, ':', cdnResult);
+  console.log('[APP] CDN Result for', track.username, 'source:', cdnResult.source || 'unknown', cdnResult);
 
   if (cdnResult && cdnResult.ok && cdnResult.cdnUrl) {
     if (cdnResult.cover && !track.thumb) {
@@ -487,6 +497,7 @@ async function startPlayback(track) {
       const ok = await PlayerAudio.playTrack(cdnResult.cdnUrl, track);
       if (ok) {
         clearSkipCooldown();
+        console.info(`[STREAM-RESOLVER] 🚀 ${track.username} -> source: ${cdnResult.source || 'direct'} (${cdnResult.fromCache ? 'RAM cache' : 'fresh fetch'})`);
         showToast(`🎧 Đang phát: ${track.username}`);
         triggerNextPreload(track);
       } else {
@@ -891,6 +902,23 @@ function updateVolume(val) {
   const num = Number(val);
   if (dom.volumeRange) dom.volumeRange.setAttribute('aria-valuenow', num);
   if (window.PlayerAudio) PlayerAudio.setVolume(num);
+  try {
+    localStorage.setItem('tiktok_player_volume', String(num));
+  } catch (_) {}
+}
+
+function loadStoredPreferences() {
+  try {
+    const savedVol = localStorage.getItem('tiktok_player_volume');
+    if (savedVol !== null && !isNaN(savedVol)) {
+      const volNum = Math.max(0, Math.min(100, Number(savedVol)));
+      if (dom.volumeRange) {
+        dom.volumeRange.value = volNum;
+        dom.volumeRange.setAttribute('aria-valuenow', volNum);
+      }
+      if (window.PlayerAudio) PlayerAudio.setVolume(volNum);
+    }
+  } catch (_) {}
 }
 
 function switchTab(name) {
@@ -1054,6 +1082,14 @@ function initUIEventListeners() {
   if (dom.volumeRange) dom.volumeRange.addEventListener('input', (e) => updateVolume(e.target.value));
   if (dom.toastClose) dom.toastClose.addEventListener('click', hideToast);
 
+  const vinylThumb = document.getElementById('vinyl-thumb');
+  if (vinylThumb) {
+    vinylThumb.addEventListener('error', () => {
+      vinylThumb.style.display = 'none';
+      vinylThumb.hidden = true;
+    });
+  }
+
   if (dom.searchInput) {
     dom.searchInput.addEventListener('input', () => {
       if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
@@ -1212,4 +1248,5 @@ initUIEventListeners();
 initAudioEventListeners();
 refreshUI();
 tryLoadFromStorage();
+loadStoredPreferences();
 refreshHealingStats();

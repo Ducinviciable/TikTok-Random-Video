@@ -156,7 +156,7 @@
             <div class="vinyl spinning" id="vinyl-el" aria-hidden="true">
               <div class="vinyl-rings"></div>
               <div class="vinyl-label" id="vinyl-label">
-                <img id="vinyl-thumb" src="" alt="" hidden onerror="this.style.display='none'; this.hidden=true;">
+                <img id="vinyl-thumb" src="" alt="" hidden>
                 <div class="vinyl-fallback" id="vinyl-fallback">
                   <svg class="vinyl-cover-art" viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
                     <defs>
@@ -219,10 +219,10 @@
           <div class="dsp-control">
             <div class="control-title">
               <span>Bass boost</span>
-              <strong id="bass-label">+6 dB</strong>
+              <strong id="bass-label">0 dB</strong>
             </div>
-            <input class="range" type="range" min="-6" max="12" value="6" id="bass-range" aria-label="Bass boost"
-              aria-valuemin="-6" aria-valuemax="12" aria-valuenow="6">
+            <input class="range" type="range" min="-6" max="12" value="0" id="bass-range" aria-label="Bass boost"
+              aria-valuemin="-6" aria-valuemax="12" aria-valuenow="0">
             <div class="range-caption"><span>-6 dB</span><span>+12 dB</span></div>
           </div>
 
@@ -244,8 +244,8 @@
               <h3>10-band EQ</h3>
             </div>
             <select id="eq-preset" aria-label="EQ preset">
-              <option value="Flat">Flat</option>
-              <option value="Bass Boost" selected>Bass Boost</option>
+              <option value="Flat" selected>Flat</option>
+              <option value="Bass Boost">Bass Boost</option>
               <option value="Vocal">Vocal</option>
               <option value="Electronic">Electronic</option>
               <option value="Lofi">Lofi</option>
@@ -351,8 +351,8 @@
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
-            <input class="range" type="range" min="0" max="100" value="72" id="volume-range" aria-label="Âm lượng chính"
-              aria-valuemin="0" aria-valuemax="100" aria-valuenow="72">
+            <input class="range" type="range" min="0" max="100" value="100" id="volume-range" aria-label="Âm lượng chính"
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
           </div>
         </div>
       </footer>

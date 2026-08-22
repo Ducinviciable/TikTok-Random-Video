@@ -61,6 +61,10 @@ async function _applyPlayerCorsRule() {
         priority: 1,
         action: {
           type: 'modifyHeaders',
+          requestHeaders: [
+            { header: 'Referer', operation: 'set', value: 'https://www.tiktok.com/' },
+            { header: 'Origin', operation: 'set', value: 'https://www.tiktok.com' },
+          ],
           responseHeaders: [
             { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
             { header: 'Access-Control-Allow-Methods', operation: 'set', value: 'GET, HEAD, OPTIONS' },

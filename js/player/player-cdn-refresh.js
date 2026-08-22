@@ -1,7 +1,7 @@
 'use strict';
 
 (function () {
-  const CDN_CACHE_TTL_MS = 15 * 60 * 1000;
+  const CDN_CACHE_TTL_MS = 20 * 60 * 1000;
   const cdnCache = new Map();
   const prefetchingUrls = new Set();
 
@@ -18,7 +18,7 @@
 
     const cached = cdnCache.get(key);
     if (cached && (Date.now() - cached.fetchedAt) < CDN_CACHE_TTL_MS) {
-      return { ok: true, cdnUrl: cached.cdnUrl, fromCache: true };
+      return { ok: true, cdnUrl: cached.cdnUrl, cover: cached.cover, source: cached.source, fromCache: true };
     }
 
     return new Promise((resolve) => {
@@ -46,8 +46,18 @@
             return;
           }
           if (response && response.ok && response.cdnUrl) {
-            cdnCache.set(key, { cdnUrl: response.cdnUrl, cover: response.cover, fetchedAt: Date.now() });
-            resolve({ ok: true, cdnUrl: response.cdnUrl, cover: response.cover });
+            cdnCache.set(key, {
+              cdnUrl: response.cdnUrl,
+              cover: response.cover,
+              source: response.source || 'unknown',
+              fetchedAt: Date.now(),
+            });
+            resolve({
+              ok: true,
+              cdnUrl: response.cdnUrl,
+              cover: response.cover,
+              source: response.source || 'unknown',
+            });
           } else {
             const err = (response && response.error) || 'Unknown error';
             resolve({ ok: false, error: err });
