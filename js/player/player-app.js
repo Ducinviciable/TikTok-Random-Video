@@ -1,14 +1,14 @@
 'use strict';
 
 const EQ_PRESETS = window.PlayerAudio ? PlayerAudio.EQ_PRESETS : {
-  'Flat':         [ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
-  'Bass Boost':   [ 3,  4,  5,  4,  2,  1,  0,  0,  0,  0],
-  'Vocal':        [-2, -1,  0,  2,  4,  5,  4,  3,  1,  0],
-  'Electronic':   [ 4,  3,  2,  0, -1,  2,  4,  5,  3,  2],
-  'Lofi':         [ 2,  2,  1,  0, -1, -1, -2, -2, -1,  0],
+  'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  'Bass Boost': [3, 4, 5, 4, 2, 1, 0, 0, 0, 0],
+  'Vocal': [-2, -1, 0, 2, 4, 5, 4, 3, 1, 0],
+  'Electronic': [4, 3, 2, 0, -1, 2, 4, 5, 3, 2],
+  'Lofi': [2, 2, 1, 0, -1, -1, -2, -2, -1, 0],
 };
-const EQ_BANDS = ['32Hz','64Hz','125Hz','250Hz','500Hz','1kHz','2kHz','4kHz','8kHz','16kHz'];
-const BG_CLASSES = ['bg-a','bg-b','bg-c','bg-d','bg-e'];
+const EQ_BANDS = ['32Hz', '64Hz', '125Hz', '250Hz', '500Hz', '1kHz', '2kHz', '4kHz', '8kHz', '16kHz'];
+const BG_CLASSES = ['bg-a', 'bg-b', 'bg-c', 'bg-d', 'bg-e'];
 
 const state = {
   tracks: [],
@@ -31,60 +31,60 @@ const state = {
 
 const $ = id => document.getElementById(id);
 const dom = {
-  playlist:       $('playlist'),
+  playlist: $('playlist'),
   playlistScrollContent: $('playlist-scroll-content'),
-  emptyState:     $('empty-state'),
-  trackCount:     $('track-count'),
-  statTotal:      $('stat-total'),
-  statOffline:    $('stat-offline'),
-  statBanned:     $('stat-banned'),
+  emptyState: $('empty-state'),
+  trackCount: $('track-count'),
+  statTotal: $('stat-total'),
+  statOffline: $('stat-offline'),
+  statBanned: $('stat-banned'),
   statHealingPending: $('stat-healing-pending'),
-  statHealingHealed:  $('stat-healing-healed'),
-  nowCreator:     $('now-creator'),
-  nowTitle:       $('now-title'),
-  originalLink:   $('original-link'),
-  vinylEl:        $('vinyl-el'),
-  vinylName:      $('vinyl-name'),
-  playBtn:        $('play-btn'),
-  btnPrev:        $('btn-prev'),
-  btnNext:        $('btn-next'),
-  btnBan:         $('btn-ban'),
-  timelineFill:   $('timeline-fill'),
-  timeCurrent:    $('time-current'),
-  timeTotal:      $('time-total'),
-  nowThumb:       $('now-thumb'),
-  nowThumbImg:    $('now-thumb-img'),
-  nowBarTitle:    $('now-bar-title'),
-  nowBarCreator:  $('now-bar-creator'),
-  sourceBadge:    $('source-badge'),
-  seekRange:      $('seek-range'),
-  volumeRange:    $('volume-range'),
-  searchInput:    $('search-input'),
-  importZone:     $('import-zone'),
-  fileInput:      $('file-input'),
-  eqSliders:      $('eq-sliders'),
-  toastEl:        $('toast'),
-  toastMsg:       $('toast-msg'),
-  toastClose:     $('toast-close'),
-  eqPreset:       $('eq-preset'),
-  bassRange:      $('bass-range'),
-  bassLabel:      $('bass-label'),
-  bassControl:    $('bass-control'),
+  statHealingHealed: $('stat-healing-healed'),
+  nowCreator: $('now-creator'),
+  nowTitle: $('now-title'),
+  originalLink: $('original-link'),
+  vinylEl: $('vinyl-el'),
+  vinylName: $('vinyl-name'),
+  playBtn: $('play-btn'),
+  btnPrev: $('btn-prev'),
+  btnNext: $('btn-next'),
+  btnBan: $('btn-ban'),
+  timelineFill: $('timeline-fill'),
+  timeCurrent: $('time-current'),
+  timeTotal: $('time-total'),
+  nowThumb: $('now-thumb'),
+  nowThumbImg: $('now-thumb-img'),
+  nowBarTitle: $('now-bar-title'),
+  nowBarCreator: $('now-bar-creator'),
+  sourceBadge: $('source-badge'),
+  seekRange: $('seek-range'),
+  volumeRange: $('volume-range'),
+  searchInput: $('search-input'),
+  importZone: $('import-zone'),
+  fileInput: $('file-input'),
+  eqSliders: $('eq-sliders'),
+  toastEl: $('toast'),
+  toastMsg: $('toast-msg'),
+  toastClose: $('toast-close'),
+  eqPreset: $('eq-preset'),
+  bassRange: $('bass-range'),
+  bassLabel: $('bass-label'),
+  bassControl: $('bass-control'),
   crossfadeRange: $('crossfade-range'),
   crossfadeLabel: $('crossfade-label'),
-  btnShuffle:     $('btn-shuffle'),
-  btnLoop:        $('btn-loop'),
-  btnVinyl:       $('btn-vinyl'),
-  btnSpectrum:    $('btn-spectrum'),
+  btnShuffle: $('btn-shuffle'),
+  btnLoop: $('btn-loop'),
+  btnVinyl: $('btn-vinyl'),
+  btnSpectrum: $('btn-spectrum'),
   visualizerArea: $('visualizer-area'),
-  soundModeRow:   $('sound-mode-row'),
+  soundModeRow: $('sound-mode-row'),
   soundModeTitle: $('sound-mode-title'),
-  btnModeHifi:    $('btn-mode-hifi'),
-  btnModeDirect:  $('btn-mode-direct'),
-  boosterLabel:   $('booster-label'),
-  tabPlaylist:    $('tab-playlist'),
-  tabOffline:     $('tab-offline'),
-  btnShuffleLib:  $('btn-shuffle-library'),
+  btnModeHifi: $('btn-mode-hifi'),
+  btnModeDirect: $('btn-mode-direct'),
+  boosterLabel: $('booster-label'),
+  tabPlaylist: $('tab-playlist'),
+  tabOffline: $('tab-offline'),
+  btnShuffleLib: $('btn-shuffle-library'),
 };
 
 function parseExtensionBackup(data) {
@@ -160,6 +160,16 @@ function loadTracks(data, source) {
 
 let lastStartIndex = -1;
 
+const RECENT_BUFFER_SIZE = 5;
+const recentlyPlayed = [];
+
+function pushRecentlyPlayed(id) {
+  const idx = recentlyPlayed.indexOf(id);
+  if (idx !== -1) recentlyPlayed.splice(idx, 1);
+  recentlyPlayed.push(id);
+  if (recentlyPlayed.length > RECENT_BUFFER_SIZE) recentlyPlayed.shift();
+}
+
 function updateVirtualScroll(force = false) {
   const visible = state.visibleTracks || [];
   const playlist = dom.playlist;
@@ -203,7 +213,7 @@ function updateVirtualScroll(force = false) {
 
   itemsToRender.forEach((track) => {
     const isSelected = track.id === state.activeId;
-    const isOffline  = state.offlineSet.has(track.id);
+    const isOffline = state.offlineSet.has(track.id);
 
     const div = document.createElement('div');
     div.className = 'track-card' + (isSelected ? ' selected' : '');
@@ -280,12 +290,12 @@ function refreshUI() {
     dom.playlist.scrollTop = 0;
   }
 
-  if (dom.statTotal)   dom.statTotal.textContent   = state.tracks.filter(t => !state.blacklisted.has(t.id)).length;
+  if (dom.statTotal) dom.statTotal.textContent = state.tracks.filter(t => !state.blacklisted.has(t.id)).length;
   if (dom.statOffline) dom.statOffline.textContent = state.offlineSet.size;
-  if (dom.statBanned)  dom.statBanned.textContent  = state.bannedFromStorage + state.blacklisted.size;
+  if (dom.statBanned) dom.statBanned.textContent = state.bannedFromStorage + state.blacklisted.size;
   if (dom.statHealingPending) dom.statHealingPending.textContent = state.healingPending || 0;
-  if (dom.statHealingHealed)  dom.statHealingHealed.textContent  = state.healingHealed || 0;
-  if (dom.trackCount)  dom.trackCount.textContent  = visible.length + ' video';
+  if (dom.statHealingHealed) dom.statHealingHealed.textContent = state.healingHealed || 0;
+  if (dom.trackCount) dom.trackCount.textContent = visible.length + ' video';
 
   if (visible.length === 0) {
     if (dom.playlistScrollContent) {
@@ -350,8 +360,8 @@ function highlightTrack(id) {
   if (!track) return;
   state.activeId = id;
 
-  if (dom.nowCreator)   dom.nowCreator.textContent = track.username;
-  if (dom.nowTitle)     dom.nowTitle.innerHTML = `${escHtml(track.title)} <span aria-hidden="true">✦</span>`;
+  if (dom.nowCreator) dom.nowCreator.textContent = track.username;
+  if (dom.nowTitle) dom.nowTitle.innerHTML = `${escHtml(track.title)} <span aria-hidden="true">✦</span>`;
   if (dom.originalLink) {
     dom.originalLink.href = track.canonicalUrl;
     dom.originalLink.hidden = false;
@@ -377,7 +387,7 @@ function highlightTrack(id) {
     }
   }
 
-  if (dom.nowBarTitle)   dom.nowBarTitle.textContent   = track.username;
+  if (dom.nowBarTitle) dom.nowBarTitle.textContent = track.username;
   if (dom.nowBarCreator) dom.nowBarCreator.textContent = track.title;
 
   if (dom.nowThumb && dom.nowThumbImg) {
@@ -441,7 +451,7 @@ function refreshHealingStats() {
     state.healingPending = queue.filter((e) => e.status === 'pending').length;
     state.healingHealed = queue.filter((e) => e.status === 'healed').length;
     if (dom.statHealingPending) dom.statHealingPending.textContent = state.healingPending;
-    if (dom.statHealingHealed)  dom.statHealingHealed.textContent  = state.healingHealed;
+    if (dom.statHealingHealed) dom.statHealingHealed.textContent = state.healingHealed;
   });
 }
 
@@ -480,6 +490,9 @@ async function startPlayback(track) {
   state.playing = true;
   state.activeId = track.id;
 
+  if (window.PlayerAudio) PlayerAudio.stopAll();
+  await new Promise(r => setTimeout(r, 150));
+
   resumePlayState();
 
   const isCached = window.PlayerCDN ? PlayerCDN.hasCached(track.canonicalUrl) : false;
@@ -503,6 +516,7 @@ async function startPlayback(track) {
       const ok = await PlayerAudio.playTrack(cdnResult.cdnUrl, track);
       if (ok) {
         clearSkipCooldown();
+        pushRecentlyPlayed(track.id);
         updateSourceBadge(cdnResult.source, cdnResult.fromCache);
         console.info(`[STREAM-RESOLVER] 🚀 ${track.username} -> source: ${cdnResult.source || 'direct'} (${cdnResult.fromCache ? 'RAM cache' : 'fresh fetch'})`);
         showToast(`🎧 Đang phát: ${track.username}`);
@@ -530,17 +544,9 @@ async function startPlayback(track) {
 }
 
 function triggerNextPreload(currentTrack) {
+  if (state.looping) return;
   const nextTrackObj = getNextTrackToPlay();
   if (!nextTrackObj || !window.PlayerCDN) return;
-
-  const visible = visibleTracks();
-  const curIdx = visible.findIndex(t => t.id === currentTrack.id);
-  const upcomingUrls = [];
-  for (let i = 1; i <= 3; i++) {
-    const u = visible[(curIdx + i) % visible.length];
-    if (u) upcomingUrls.push(u.canonicalUrl);
-  }
-  PlayerCDN.prefetchTracks(upcomingUrls);
 
   PlayerCDN.refreshCdnUrl(nextTrackObj.canonicalUrl).then(res => {
     if (res && res.ok) {
@@ -551,6 +557,19 @@ function triggerNextPreload(currentTrack) {
         PlayerAudio.preloadTrack(res.cdnUrl, nextTrackObj);
       }
     }
+
+    const visible = visibleTracks();
+    const curIdx = visible.findIndex(t => t.id === currentTrack.id);
+    const upcomingUrls = [];
+    for (let i = 2; i <= 3; i++) {
+      const u = visible[(curIdx + i) % visible.length];
+      if (u && u.canonicalUrl !== nextTrackObj.canonicalUrl) {
+        upcomingUrls.push(u.canonicalUrl);
+      }
+    }
+    if (upcomingUrls.length > 0) {
+      PlayerCDN.prefetchTracks(upcomingUrls);
+    }
   });
 }
 
@@ -558,7 +577,9 @@ function getNextTrackToPlay() {
   const visible = visibleTracks();
   if (!visible.length) return null;
   if (state.shuffled) {
-    return visible[Math.floor(Math.random() * visible.length)];
+    const pool = visible.filter(t => !recentlyPlayed.includes(t.id));
+    const candidates = pool.length > 0 ? pool : visible;
+    return candidates[Math.floor(Math.random() * candidates.length)];
   }
   const idx = visible.findIndex(t => t.id === state.activeId);
   return visible[(idx + 1) % visible.length];
@@ -573,6 +594,7 @@ function getPrevTrackToPlay() {
 
 function handleTrackEnded() {
   if (state.looping) {
+    if (window.PlayerAudio && PlayerAudio.replay()) return;
     const cur = state.tracks.find(t => t.id === state.activeId);
     if (cur) { startPlayback(cur); return; }
   }
@@ -586,9 +608,9 @@ function updateMediaSession(track) {
     artist: track.username,
     artwork: track.thumb ? [{ src: track.thumb, sizes: '300x300', type: 'image/jpeg' }] : [],
   });
-  navigator.mediaSession.setActionHandler('play',          () => togglePlay());
-  navigator.mediaSession.setActionHandler('pause',         () => togglePlay());
-  navigator.mediaSession.setActionHandler('nexttrack',     () => nextTrack());
+  navigator.mediaSession.setActionHandler('play', () => togglePlay());
+  navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+  navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
   navigator.mediaSession.setActionHandler('previoustrack', () => previousTrack());
 }
 
@@ -671,6 +693,13 @@ function toggleLoop() {
     dom.btnLoop.classList.toggle('is-active', state.looping);
     dom.btnLoop.setAttribute('aria-pressed', state.looping);
   }
+  if (window.PlayerAudio) {
+    PlayerAudio.setLoop(state.looping);
+  }
+  try {
+    localStorage.setItem('tiktok_player_loop', state.looping ? '1' : '0');
+  } catch (_) { }
+  showToast(state.looping ? '🔁 Lặp lại: Bật' : '🔁 Lặp lại: Tắt');
 }
 
 function banCurrentTrack() {
@@ -705,7 +734,7 @@ function banTrack(id) {
 function saveOffline(id) {
   state.offlineSet.add(id);
   showToast('💾 Đã đánh dấu lưu offline (DP-4)');
-  
+
   const card = dom.playlist.querySelector(`.track-card[data-id="${id}"]`);
   if (card) {
     const btnSave = card.querySelector('.action-save');
@@ -733,7 +762,7 @@ function seekTo(val) {
   const pct = Number(val);
   state.progressPct = pct;
   if (dom.timelineFill) dom.timelineFill.style.width = pct + '%';
-  if (dom.seekRange)    dom.seekRange.value = pct;
+  if (dom.seekRange) dom.seekRange.value = pct;
   if (window.PlayerAudio) {
     PlayerAudio.seekPercent(pct);
   }
@@ -835,8 +864,8 @@ function drawSpectrum() {
     grad.addColorStop(0, '#a89cf5');
     grad.addColorStop(0.5, '#86ddeb');
     grad.addColorStop(1, '#edb7d6');
-    ctx.fillStyle    = grad;
-    ctx.globalAlpha  = 0.9;
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = 0.9;
     ctx.beginPath();
     ctx.roundRect(x, y, barWidth, bh, 8);
     ctx.fill();
@@ -856,7 +885,7 @@ function buildEqSliders() {
       <input type="range" min="-12" max="12" value="${val}"
         aria-label="${band} EQ" aria-valuemin="-12" aria-valuemax="12" aria-valuenow="${val}">
       <span id="eq-val-${i}">${val > 0 ? '+' : ''}${val}</span>
-      <small>${['32','64','125','250','500','1k','2k','4k','8k','16k'][i]}</small>`;
+      <small>${['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'][i]}</small>`;
     const input = label.querySelector('input');
     if (input) {
       input.addEventListener('input', (e) => updateEqBand(i, e.target.value, e.target));
@@ -950,6 +979,9 @@ function updateCrossfade(val) {
   if (dom.crossfadeLabel) dom.crossfadeLabel.textContent = sec.toFixed(1) + 's';
   if (dom.crossfadeRange) dom.crossfadeRange.setAttribute('aria-valuenow', sec);
   if (window.PlayerAudio) PlayerAudio.setCrossfadeDuration(sec);
+  try {
+    localStorage.setItem('tiktok_player_crossfade', String(sec));
+  } catch (_) { }
 }
 
 function updateVolume(val) {
@@ -958,7 +990,7 @@ function updateVolume(val) {
   if (window.PlayerAudio) PlayerAudio.setVolume(num);
   try {
     localStorage.setItem('tiktok_player_volume', String(num));
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function loadStoredPreferences() {
@@ -972,11 +1004,32 @@ function loadStoredPreferences() {
       }
       if (window.PlayerAudio) PlayerAudio.setVolume(volNum);
     }
-  } catch (_) {}
+    const savedCrossfade = localStorage.getItem('tiktok_player_crossfade');
+    if (savedCrossfade !== null && !isNaN(savedCrossfade)) {
+      const crossfadeNum = Math.max(0, Math.min(5.0, Number(savedCrossfade)));
+      if (dom.crossfadeRange) {
+        dom.crossfadeRange.value = crossfadeNum;
+        dom.crossfadeRange.setAttribute('aria-valuenow', crossfadeNum);
+      }
+      if (dom.crossfadeLabel) dom.crossfadeLabel.textContent = crossfadeNum.toFixed(1) + 's';
+      if (window.PlayerAudio) PlayerAudio.setCrossfadeDuration(crossfadeNum);
+    }
+    const savedLoop = localStorage.getItem('tiktok_player_loop');
+    if (savedLoop !== null) {
+      state.looping = savedLoop === '1';
+      if (dom.btnLoop) {
+        dom.btnLoop.classList.toggle('is-active', state.looping);
+        dom.btnLoop.setAttribute('aria-pressed', state.looping);
+      }
+      if (window.PlayerAudio) {
+        PlayerAudio.setLoop(state.looping);
+      }
+    }
+  } catch (_) { }
 }
 
 function switchTab(name) {
-  ['playlist','offline'].forEach(n => {
+  ['playlist', 'offline'].forEach(n => {
     const btn = document.getElementById('tab-' + n);
     if (btn) {
       btn.classList.toggle('active', n === name);
@@ -1106,21 +1159,21 @@ function initKeyboard() {
 function formatTime(s) {
   if (isNaN(s) || s < 0) s = 0;
   const m = Math.floor(s / 60);
-  return `${String(m).padStart(2,'0')}:${String(Math.floor(s % 60)).padStart(2,'0')}`;
+  return `${String(m).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 }
 
 function escHtml(str) {
   return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 let searchDebounceTimer = null;
 
 function initUIEventListeners() {
   if (dom.tabPlaylist) dom.tabPlaylist.addEventListener('click', () => switchTab('playlist'));
-  if (dom.tabOffline)  dom.tabOffline.addEventListener('click', () => switchTab('offline'));
-  if (dom.btnVinyl)    dom.btnVinyl.addEventListener('click', () => setMode('vinyl'));
+  if (dom.tabOffline) dom.tabOffline.addEventListener('click', () => switchTab('offline'));
+  if (dom.btnVinyl) dom.btnVinyl.addEventListener('click', () => setMode('vinyl'));
   if (dom.btnSpectrum) dom.btnSpectrum.addEventListener('click', () => setMode('spectrum'));
   if (dom.btnModeHifi) dom.btnModeHifi.addEventListener('click', () => setSoundMode('hifi'));
   if (dom.btnModeDirect) dom.btnModeDirect.addEventListener('click', () => setSoundMode('direct'));
@@ -1146,6 +1199,14 @@ function initUIEventListeners() {
     vinylThumb.addEventListener('error', () => {
       vinylThumb.style.display = 'none';
       vinylThumb.hidden = true;
+    });
+  }
+
+  if (dom.visualizerArea) {
+    dom.visualizerArea.addEventListener('click', () => {
+      if (state.currentMode === 'vinyl' && dom.vinylEl) {
+        dom.vinylEl.hidden = !dom.vinylEl.hidden;
+      }
     });
   }
 
@@ -1217,8 +1278,8 @@ function initAudioEventListeners() {
     }
     state.progressPct = progressPct;
     if (dom.timelineFill) dom.timelineFill.style.width = progressPct + '%';
-    if (dom.seekRange)    dom.seekRange.value = progressPct;
-    if (dom.timeCurrent)  dom.timeCurrent.textContent = formatTime(currentTime);
+    if (dom.seekRange) dom.seekRange.value = progressPct;
+    if (dom.timeCurrent) dom.timeCurrent.textContent = formatTime(currentTime);
     if (dom.timeTotal && duration > 0) {
       dom.timeTotal.textContent = formatTime(duration);
     }
@@ -1229,6 +1290,7 @@ function initAudioEventListeners() {
   });
 
   PlayerAudio.on('preloadNeeded', async () => {
+    if (state.looping) return;
     const next = getNextTrackToPlay();
     if (!next) return;
     if (window.PlayerCDN) {

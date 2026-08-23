@@ -82,12 +82,14 @@ function onVideoTimeUpdate() {
       triggerHumanMouseNudge("video_transition");
     }
 
-    if (loopObserver) {
-      loopObserver.disconnect();
-      loopObserver = null;
+    video.muted = true;
+    var otherVidsEarly = document.querySelectorAll("video");
+    for (var k1 = 0; k1 < otherVidsEarly.length; k1++) {
+      if (otherVidsEarly[k1] !== video) {
+        otherVidsEarly[k1].muted = true;
+        try { otherVidsEarly[k1].pause(); } catch (_) {}
+      }
     }
-    video.removeAttribute("loop");
-    video.pause();
 
     requestNextVideo();
     lastTimeForLoop = -1;
@@ -125,17 +127,19 @@ function onVideoTimeUpdate() {
       triggerHumanMouseNudge("video_end");
     }
 
-    if (loopObserver) {
-      loopObserver.disconnect();
-      loopObserver = null;
+    video.muted = true;
+    var otherVidsEnd = document.querySelectorAll("video");
+    for (var k2 = 0; k2 < otherVidsEnd.length; k2++) {
+      if (otherVidsEnd[k2] !== video) {
+        otherVidsEnd[k2].muted = true;
+        try { otherVidsEnd[k2].pause(); } catch (_) {}
+      }
     }
-    video.removeAttribute("loop");
-    video.pause();
 
     console.log(
       "[CS] Video gần hết (" +
         remaining.toFixed(2) +
-        "s còn lại) → Tạm dừng & chuyển video",
+        "s còn lại) → Mute & chuyển video ngẫu nhiên",
     );
     requestNextVideo();
     lastTimeForLoop = -1;
@@ -162,12 +166,14 @@ function onVideoTimeUpdate() {
       triggerHumanMouseNudge("video_transition");
     }
 
-    if (loopObserver) {
-      loopObserver.disconnect();
-      loopObserver = null;
+    video.muted = true;
+    var otherVidsLoop = document.querySelectorAll("video");
+    for (var k3 = 0; k3 < otherVidsLoop.length; k3++) {
+      if (otherVidsLoop[k3] !== video) {
+        otherVidsLoop[k3].muted = true;
+        try { otherVidsLoop[k3].pause(); } catch (_) {}
+      }
     }
-    video.removeAttribute("loop");
-    video.pause();
 
     requestNextVideo();
     lastTimeForLoop = -1;

@@ -31,9 +31,9 @@
       const timer = setTimeout(() => {
         if (!done) {
           done = true;
-          resolve({ ok: false, error: 'refreshCdnUrl timed out after 10s' });
+          resolve({ ok: false, error: 'refreshCdnUrl timed out after 15s' });
         }
-      }, 10000);
+      }, 15000);
 
       chrome.runtime.sendMessage(
         { action: 'refreshCdnUrl', canonicalUrl: key },
@@ -75,10 +75,12 @@
       if (hasCached(key) || prefetchingUrls.has(key)) continue;
 
       prefetchingUrls.add(key);
-      refreshCdnUrl(key).finally(() => {
+      try {
+        await refreshCdnUrl(key);
+      } finally {
         prefetchingUrls.delete(key);
-      });
-      await new Promise(r => setTimeout(r, 200));
+      }
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
 

@@ -34,6 +34,14 @@ function watchForVideoElement() {
 
   if (!targetVideo || targetVideo === currentVideoElement) return;
 
+  for (let j = 0; j < videos.length; j++) {
+    const other = videos[j];
+    if (other !== targetVideo) {
+      other.muted = true;
+      try { other.pause(); } catch (_) {}
+    }
+  }
+
   // Cleanup previous video
   if (currentVideoElement) {
     currentVideoElement.removeEventListener("ended", onVideoEnded);

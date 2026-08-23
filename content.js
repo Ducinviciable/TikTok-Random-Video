@@ -65,6 +65,11 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   }
 
   if (request.action === "navigateToVideo") {
+    var allVidsNav = document.querySelectorAll("video");
+    for (var n = 0; n < allVidsNav.length; n++) {
+      allVidsNav[n].muted = true;
+      try { allVidsNav[n].pause(); } catch (_) {}
+    }
     window.location.href = request.url;
     sendResponse({ success: true });
     return true;

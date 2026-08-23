@@ -251,7 +251,7 @@ async function handleSetAutoNext(enabled) {
   return { success: true };
 }
 
-const HEALING_MAX_ENTRIES = 50;
+const HEALING_MAX_ENTRIES = 500;
 const HEALING_MAX_RETRIES = 3;
 const HEALING_CLEANUP_AGE_MS = 24 * 60 * 60 * 1000;
 

@@ -14,7 +14,15 @@
     var videos = document.querySelectorAll("video");
     for (var i = 0; i < videos.length; i++) {
       var v = videos[i];
-      if (v.paused && v.src && v.duration && v.duration > 0 && !v.ended) {
+      if (currentVideoElement && v !== currentVideoElement) {
+        if (!v.paused) {
+          try { v.pause(); } catch (_) {}
+        }
+        v.muted = true;
+        continue;
+      }
+
+      if (v === currentVideoElement && v.paused && v.src && v.duration && v.duration > 0 && !v.ended) {
         (function (video) {
           console.log("[CS] ⚠️ Phát hiện video bị pause hoặc load chậm");
           if (typeof logPlaybackDiagnostics === "function") {

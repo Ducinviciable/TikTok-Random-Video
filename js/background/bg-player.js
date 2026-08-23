@@ -28,9 +28,9 @@ function handleRefreshCdnUrl(request, sender, sendResponse) {
     const list = _inflightRefreshes.get(canonicalUrl) || [];
     _inflightRefreshes.delete(canonicalUrl);
     list.forEach(cb => {
-      try { cb({ ok: false, error: 'Stream fetch timed out after 12s' }); } catch (_) {}
+      try { cb({ ok: false, error: 'Stream fetch timed out after 18s' }); } catch (_) {}
     });
-  }, 12000);
+  }, 18000);
 
   (async () => {
     try {

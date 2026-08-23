@@ -45,6 +45,7 @@
   let masterVolume = 1.0;
   let volumeBooster = 1.0;
   let isMuted = false;
+  let isLoopEnabled = false;
 
   let preloadTriggered = false;
   let isCrossfading = false;
@@ -93,6 +94,8 @@
       playerB.muted = false;
       playerA.volume = 1.0;
       playerB.volume = 1.0;
+      playerA.loop = isLoopEnabled;
+      playerB.loop = isLoopEnabled;
 
       sourceA = audioCtx.createMediaElementSource(playerA);
       sourceB = audioCtx.createMediaElementSource(playerB);
@@ -245,8 +248,13 @@
       if (dur > 0 && cur >= dur - 0.3 && !isCrossfading) {
         stuckSeconds++;
         if (stuckSeconds >= 3) {
-          console.warn('[AUDIO] End-of-track reached without transition → forcing transition');
           stuckSeconds = 0;
+          if (isLoopEnabled) {
+            console.warn('[AUDIO] End-of-track reached with loop enabled → replaying');
+            replay();
+            return;
+          }
+          console.warn('[AUDIO] End-of-track reached without transition → forcing transition');
           if (preloadedUrl) {
             performCrossfade();
           } else {
@@ -282,6 +290,25 @@
     }, 1000);
   }
 
+  let crossfadeInitiated = false;
+  let pendingPreload = null;
+
+  function _createEqualPowerCurves(numSteps = 64) {
+    const fadeIn = new Float32Array(numSteps);
+    const fadeOut = new Float32Array(numSteps);
+    for (let i = 0; i < numSteps; i++) {
+      const t = i / (numSteps - 1);
+      fadeIn[i] = Math.sin(t * (Math.PI / 2));
+      fadeOut[i] = Math.cos(t * (Math.PI / 2));
+    }
+    return { fadeIn, fadeOut };
+  }
+
+  function getEffectiveCrossfade(dur) {
+    if (crossfadeDuration <= 0 || !dur || !isFinite(dur) || dur < 3.0) return 0;
+    return Math.min(crossfadeDuration, Math.min(dur * 0.15, 5.0));
+  }
+
   function _attachPlayerListeners(player, channelName) {
     player.addEventListener('timeupdate', () => {
       if (channelName !== activeChannel) return;
@@ -297,31 +324,34 @@
         track: activeTrack,
       });
 
-      if (dur >= 15 && !preloadTriggered) {
-        const effectiveCrossfade = Math.min(crossfadeDuration, dur * 0.12);
+      if (!isLoopEnabled && !preloadTriggered && dur > 3.0 && isFinite(dur)) {
         const remaining = dur - cur;
-        if (pct >= 85 || remaining <= (effectiveCrossfade + 3)) {
+        if (pct >= 50 && (pct >= 70 || remaining <= 10.0)) {
           preloadTriggered = true;
           emit('preloadNeeded', { currentTrack: activeTrack });
         }
-      } else if (dur > 0 && dur < 15 && !preloadTriggered && pct >= 80) {
-        preloadTriggered = true;
-        emit('preloadNeeded', { currentTrack: activeTrack });
       }
 
-      if (!isCrossfading && preloadedUrl && dur >= 15 && crossfadeDuration > 0) {
-        const effectiveCrossfade = Math.min(crossfadeDuration, dur * 0.12);
-        if ((dur - cur) <= effectiveCrossfade) {
-          performCrossfade();
+      if (!isLoopEnabled && !isCrossfading && !crossfadeInitiated && preloadedUrl && dur > 3.0 && isFinite(dur) && crossfadeDuration > 0) {
+        const effectiveCrossfade = getEffectiveCrossfade(dur);
+        const remaining = dur - cur;
+        if (pct >= 65 && effectiveCrossfade > 0 && remaining <= effectiveCrossfade) {
+          crossfadeInitiated = true;
+          performCrossfade(effectiveCrossfade);
         }
       }
     });
 
     player.addEventListener('ended', () => {
       if (channelName === activeChannel && !isCrossfading) {
-        if (preloadedUrl) {
-          performCrossfade();
-        } else {
+        if (isLoopEnabled) {
+          replay();
+          return;
+        }
+        if (preloadedUrl && !crossfadeInitiated && crossfadeDuration > 0) {
+          crossfadeInitiated = true;
+          performCrossfade(Math.min(crossfadeDuration, 1.2));
+        } else if (!crossfadeInitiated) {
           emit('ended', { channel: channelName, track: activeTrack });
         }
       }
@@ -384,6 +414,24 @@
     });
   }
 
+  function stopAll() {
+    if (crossfadeTimer) {
+      clearTimeout(crossfadeTimer);
+      crossfadeTimer = null;
+    }
+    isCrossfading = false;
+    crossfadeInitiated = false;
+    for (const [player, gain] of [[playerA, gainA], [playerB, gainB]]) {
+      if (!player) continue;
+      try {
+        gain.gain.cancelScheduledValues(audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+        player.pause();
+        player.currentTime = 0;
+      } catch (_) {}
+    }
+  }
+
   async function playTrack(cdnUrl, track) {
     initAudioContext();
     if (audioCtx.state === 'suspended') {
@@ -397,52 +445,99 @@
     }
 
     if (preloadedTrack && preloadedTrack.id === track.id && preloadedUrl) {
-      await performCrossfade();
-      return true;
+      crossfadeInitiated = true;
+      const ok = await performCrossfade();
+      if (ok) return true;
     }
+
+    const isCurrentlyPlaying = isPlaying();
+    const targetChannel = isCurrentlyPlaying ? (activeChannel === 'A' ? 'B' : 'A') : activeChannel;
+    const targetPlayer = targetChannel === 'A' ? playerA : playerB;
+    const targetGain = targetChannel === 'A' ? gainA : gainB;
+    const fadeOutPlayer = targetChannel === 'A' ? playerB : playerA;
+    const fadeOutGain = targetChannel === 'A' ? gainB : gainA;
 
     isUserPaused = false;
     lastCurrentTime = -1;
     stuckSeconds = 0;
     preloadTriggered = false;
-    activeTrack = track;
-
-    const targetPlayer = activeChannel === 'A' ? playerA : playerB;
-    const targetGain = activeChannel === 'A' ? gainA : gainB;
-    const idlePlayer = activeChannel === 'A' ? playerB : playerA;
-    const idleGain = activeChannel === 'A' ? gainB : gainA;
-
-    try {
-      idlePlayer.pause();
-      idlePlayer.currentTime = 0;
-      idleGain.gain.cancelScheduledValues(audioCtx.currentTime);
-      idleGain.gain.setValueAtTime(0, audioCtx.currentTime);
-    } catch (_) { }
-
+    crossfadeInitiated = false;
     preloadedTrack = null;
     preloadedUrl = null;
+    pendingPreload = null;
 
     targetPlayer.src = cdnUrl;
-    targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
-    targetGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+    targetPlayer.loop = isLoopEnabled;
 
-    try {
-      console.log('[AUDIO] Attempting play on channel', activeChannel, 'URL:', cdnUrl.substring(0, 100));
-      await targetPlayer.play();
-      console.log('[AUDIO] Play successful on channel', activeChannel);
-      emit('trackChanged', { track, channel: activeChannel });
-      return true;
-    } catch (err) {
-      console.error('[AUDIO] play() call rejected:', err);
-      emit('error', { channel: activeChannel, error: err, track });
-      return false;
+    if (isCurrentlyPlaying && crossfadeDuration > 0) {
+      const quickFadeDur = 0.35;
+      targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      targetGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+
+      try {
+        await targetPlayer.play();
+        const now = audioCtx.currentTime;
+        const { fadeIn, fadeOut } = _createEqualPowerCurves(32);
+
+        targetGain.gain.cancelScheduledValues(now);
+        targetGain.gain.setValueCurveAtTime(fadeIn, now, quickFadeDur);
+
+        fadeOutGain.gain.cancelScheduledValues(now);
+        fadeOutGain.gain.setValueCurveAtTime(fadeOut, now, quickFadeDur);
+
+        activeChannel = targetChannel;
+        activeTrack = track;
+        emit('trackChanged', { track, channel: activeChannel });
+
+        setTimeout(() => {
+          try {
+            fadeOutPlayer.pause();
+            fadeOutPlayer.currentTime = 0;
+            fadeOutGain.gain.cancelScheduledValues(audioCtx.currentTime);
+            fadeOutGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+          } catch (_) {}
+          targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          targetGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+        }, Math.round(quickFadeDur * 1000) + 40);
+
+        return true;
+      } catch (err) {
+        console.error('[AUDIO] play() call rejected:', err);
+        emit('error', { channel: targetChannel, error: err, track });
+        return false;
+      }
+    } else {
+      // Stop both players to prevent overlap from any in-flight crossfade or preload.
+      for (const [p, g] of [[playerA, gainA], [playerB, gainB]]) {
+        if (!p) continue;
+        try {
+          g.gain.cancelScheduledValues(audioCtx.currentTime);
+          g.gain.setValueAtTime(0.0, audioCtx.currentTime);
+          p.pause();
+          p.currentTime = 0;
+        } catch (_) {}
+      }
+
+      targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      targetGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+      activeChannel = targetChannel;
+      activeTrack = track;
+
+      try {
+        console.log('[AUDIO] Attempting play on channel', activeChannel, 'URL:', cdnUrl.substring(0, 100));
+        await targetPlayer.play();
+        console.log('[AUDIO] Play successful on channel', activeChannel);
+        emit('trackChanged', { track, channel: activeChannel });
+        return true;
+      } catch (err) {
+        console.error('[AUDIO] play() call rejected:', err);
+        emit('error', { channel: activeChannel, error: err, track });
+        return false;
+      }
     }
   }
 
-  function preloadTrack(cdnUrl, track) {
-    initAudioContext();
-    if (!cdnUrl || !track) return;
-
+  function _applyPreload(cdnUrl, track) {
     const idlePlayer = activeChannel === 'A' ? playerB : playerA;
     const idleGain = activeChannel === 'A' ? gainB : gainA;
 
@@ -455,8 +550,21 @@
     idleGain.gain.setValueAtTime(0, audioCtx.currentTime);
   }
 
-  async function performCrossfade() {
-    if (isCrossfading || !preloadedUrl) return;
+  function preloadTrack(cdnUrl, track) {
+    if (isLoopEnabled) return;
+    initAudioContext();
+    if (!cdnUrl || !track) return;
+
+    if (isCrossfading) {
+      pendingPreload = { cdnUrl, track };
+      return;
+    }
+
+    _applyPreload(cdnUrl, track);
+  }
+
+  async function performCrossfade(customDuration = null) {
+    if (isCrossfading || !preloadedUrl) return false;
     isCrossfading = true;
 
     initAudioContext();
@@ -471,31 +579,36 @@
     const newChannel = activeChannel === 'A' ? 'B' : 'A';
     const newTrack = preloadedTrack;
 
-    const now = audioCtx.currentTime;
-    const duration = Math.max(0.1, crossfadeDuration);
+    const duration = customDuration != null ? Math.max(0.1, customDuration) : Math.max(0.1, crossfadeDuration);
 
-    fadeInGain.gain.cancelScheduledValues(now);
-    fadeInGain.gain.setValueAtTime(0.001, now);
-    fadeInGain.gain.linearRampToValueAtTime(1.0, now + duration);
+    fadeInGain.gain.cancelScheduledValues(audioCtx.currentTime);
+    fadeInGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
 
     try {
       await fadeInPlayer.play();
     } catch (err) {
       console.warn('[AUDIO] fadeInPlayer play error:', err);
       isCrossfading = false;
+      crossfadeInitiated = false;
       preloadedUrl = null;
       preloadedTrack = null;
       emit('error', { channel: newChannel, error: err, track: newTrack });
-      return;
+      return false;
     }
 
+    const now = audioCtx.currentTime;
+    const { fadeIn, fadeOut } = _createEqualPowerCurves(64);
+
+    fadeInGain.gain.cancelScheduledValues(now);
+    fadeInGain.gain.setValueCurveAtTime(fadeIn, now, duration);
+
     fadeOutGain.gain.cancelScheduledValues(now);
-    fadeOutGain.gain.setValueAtTime(fadeOutGain.gain.value, now);
-    fadeOutGain.gain.linearRampToValueAtTime(0.001, now + duration);
+    fadeOutGain.gain.setValueCurveAtTime(fadeOut, now, duration);
 
     activeChannel = newChannel;
     activeTrack = newTrack;
     preloadTriggered = false;
+    crossfadeInitiated = false;
     preloadedTrack = null;
     preloadedUrl = null;
     lastCurrentTime = -1;
@@ -503,22 +616,53 @@
 
     emit('trackChanged', { track: newTrack, channel: newChannel });
 
+    if (crossfadeTimer) clearTimeout(crossfadeTimer);
     crossfadeTimer = setTimeout(() => {
       try {
         fadeOutPlayer.pause();
         fadeOutPlayer.currentTime = 0;
-        fadeOutGain.gain.setValueAtTime(0, audioCtx.currentTime);
-      } catch (_) { }
+        fadeOutGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        fadeOutGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+      } catch (_) {}
+      fadeInGain.gain.cancelScheduledValues(audioCtx.currentTime);
       fadeInGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
       isCrossfading = false;
       crossfadeTimer = null;
-    }, duration * 1000 + 100);
+
+      if (pendingPreload) {
+        const p = pendingPreload;
+        pendingPreload = null;
+        _applyPreload(p.cdnUrl, p.track);
+      }
+    }, Math.round(duration * 1000) + 60);
+
+    return true;
   }
 
   function pause() {
     isUserPaused = true;
     const player = activeChannel === 'A' ? playerA : playerB;
     if (player) player.pause();
+  }
+
+  function replay() {
+    if (!isInitialized || !activeTrack) return false;
+    const player = activeChannel === 'A' ? playerA : playerB;
+    const gain = activeChannel === 'A' ? gainA : gainB;
+    if (!player || !player.src) return false;
+    try {
+      player.currentTime = 0;
+      preloadTriggered = false;
+      crossfadeInitiated = false;
+      lastCurrentTime = -1;
+      stuckSeconds = 0;
+      gain.gain.cancelScheduledValues(audioCtx.currentTime);
+      gain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+      player.play().catch(() => {});
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   async function resume() {
@@ -587,6 +731,23 @@
       compressorGain.gain.setValueAtTime(normalizerEnabled ? 1.0 : 0.0, audioCtx.currentTime);
       bypassGain.gain.setValueAtTime(normalizerEnabled ? 0.0 : 1.0, audioCtx.currentTime);
     }
+  }
+
+  function setLoop(enabled) {
+    isLoopEnabled = Boolean(enabled);
+    if (playerA) playerA.loop = isLoopEnabled;
+    if (playerB) playerB.loop = isLoopEnabled;
+    if (isLoopEnabled) {
+      preloadedUrl = null;
+      preloadedTrack = null;
+      pendingPreload = null;
+      preloadTriggered = false;
+      crossfadeInitiated = false;
+    }
+  }
+
+  function isLoop() {
+    return isLoopEnabled;
   }
 
   function setCrossfadeDuration(sec) {
@@ -732,6 +893,8 @@
     playTrack,
     preloadTrack,
     performCrossfade,
+    stopAll,
+    replay,
     pause,
     resume,
     seek,
@@ -744,6 +907,8 @@
     toggleMute,
     setBassBoost,
     setNormalizer,
+    setLoop,
+    isLoop,
     setCrossfadeDuration,
     setEqBand,
     setEqPreset,
