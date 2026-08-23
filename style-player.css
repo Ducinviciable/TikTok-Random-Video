@@ -676,6 +676,9 @@ a:hover {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)),
+    url('background.png') center / cover no-repeat;
 }
 
 .stage-top {

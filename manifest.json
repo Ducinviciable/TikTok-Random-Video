@@ -53,6 +53,7 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "background.png",
         "player.html",
         "style-player.css",
         "js/player/player-cdn-refresh.js",
