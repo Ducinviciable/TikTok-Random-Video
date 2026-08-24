@@ -171,6 +171,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case "clearHealingQueue":
       handleClearHealingQueue().then(sendResponse);
       return true;
+
+    case "startBatchHealing":
+      handleStartBatchHealing()
+        .then(sendResponse)
+        .catch((e) => sendResponse({ success: false, error: e ? e.message : 'Unknown error' }));
+      return true;
+
+    case "stopBatchHealing":
+      handleStopBatchHealing()
+        .then(sendResponse)
+        .catch((e) => sendResponse({ success: false, error: e ? e.message : 'Unknown error' }));
+      return true;
   }
 });
 

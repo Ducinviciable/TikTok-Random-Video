@@ -1,15 +1,6 @@
 'use strict';
 
 (function () {
-  const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-  const EQ_PRESETS = {
-    'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    'Bass Boost': [3, 4, 5, 4, 2, 1, 0, 0, 0, 0],
-    'Vocal': [-2, -1, 0, 2, 4, 5, 4, 3, 1, 0],
-    'Electronic': [4, 3, 2, 0, -1, 2, 4, 5, 3, 2],
-    'Lofi': [2, 2, 1, 0, -1, -1, -2, -2, -1, 0],
-  };
-
   let audioCtx = null;
   let isInitialized = false;
 
@@ -19,19 +10,7 @@
   let sourceB = null;
   let gainA = null;
   let gainB = null;
-
   let preMixGain = null;
-  let dspBranchGain = null;
-  let directBranchGain = null;
-  let eqFilters = [];
-  let bassBoostNode = null;
-  let compressorNode = null;
-  let makeupGainNode = null;
-  let compressorGain = null;
-  let bypassGain = null;
-  let postDSPCrossover = null;
-  let masterGainNode = null;
-  let analyserNode = null;
 
   let activeChannel = 'A';
   let activeTrack = null;
@@ -39,17 +18,18 @@
   let preloadedUrl = null;
 
   let crossfadeDuration = 2.5;
-  let bassBoostGain = 0;
-  let normalizerEnabled = true;
-  let pureDirectEnabled = false;
-  let masterVolume = 1.0;
-  let volumeBooster = 1.0;
-  let isMuted = false;
   let isLoopEnabled = false;
 
   let preloadTriggered = false;
   let isCrossfading = false;
   let crossfadeTimer = null;
+  let crossfadeInitiated = false;
+  let pendingPreload = null;
+
+  let isUserPaused = false;
+  let watchdogInterval = null;
+  let lastCurrentTime = -1;
+  let stuckSeconds = 0;
 
   const listeners = {
     timeupdate: [],
@@ -113,80 +93,9 @@
       gainA.connect(preMixGain);
       gainB.connect(preMixGain);
 
-      dspBranchGain = audioCtx.createGain();
-      directBranchGain = audioCtx.createGain();
-      dspBranchGain.gain.value = pureDirectEnabled ? 0.0 : 1.0;
-      directBranchGain.gain.value = pureDirectEnabled ? 1.0 : 0.0;
-
-      preMixGain.connect(dspBranchGain);
-      preMixGain.connect(directBranchGain);
-
-      eqFilters = EQ_FREQUENCIES.map((freq, idx) => {
-        const filter = audioCtx.createBiquadFilter();
-        if (idx === 0) {
-          filter.type = 'lowshelf';
-        } else if (idx === EQ_FREQUENCIES.length - 1) {
-          filter.type = 'highshelf';
-        } else {
-          filter.type = 'peaking';
-          filter.Q.value = 1.4;
-        }
-        filter.frequency.value = freq;
-        filter.gain.value = EQ_PRESETS['Flat'][idx] || 0;
-        return filter;
-      });
-
-      let lastNode = dspBranchGain;
-      eqFilters.forEach(filter => {
-        lastNode.connect(filter);
-        lastNode = filter;
-      });
-
-      bassBoostNode = audioCtx.createBiquadFilter();
-      bassBoostNode.type = 'lowshelf';
-      bassBoostNode.frequency.value = 100;
-      bassBoostNode.gain.value = bassBoostGain;
-      lastNode.connect(bassBoostNode);
-
-      compressorNode = audioCtx.createDynamicsCompressor();
-      compressorNode.threshold.value = -12;
-      compressorNode.knee.value = 15;
-      compressorNode.ratio.value = 2;
-      compressorNode.attack.value = 0.010;
-      compressorNode.release.value = 0.200;
-
-      makeupGainNode = audioCtx.createGain();
-      makeupGainNode.gain.value = 1.496; // +3.5 dB makeup gain
-
-      compressorGain = audioCtx.createGain();
-      bypassGain = audioCtx.createGain();
-      postDSPCrossover = audioCtx.createGain();
-
-      compressorGain.gain.value = normalizerEnabled ? 1.0 : 0.0;
-      bypassGain.gain.value = normalizerEnabled ? 0.0 : 1.0;
-
-      bassBoostNode.connect(compressorNode);
-      compressorNode.connect(makeupGainNode);
-      makeupGainNode.connect(compressorGain);
-      compressorGain.connect(postDSPCrossover);
-
-      bassBoostNode.connect(bypassGain);
-      bypassGain.connect(postDSPCrossover);
-
-      masterGainNode = audioCtx.createGain();
-      masterGainNode.gain.value = masterVolume * volumeBooster;
-
-      postDSPCrossover.connect(masterGainNode);
-      directBranchGain.connect(masterGainNode);
-
-      analyserNode = audioCtx.createAnalyser();
-      analyserNode.fftSize = 128;
-      analyserNode.smoothingTimeConstant = 0.8;
-      analyserNode.minDecibels = -90;
-      analyserNode.maxDecibels = -10;
-
-      masterGainNode.connect(analyserNode);
-      analyserNode.connect(audioCtx.destination);
+      if (window.PlayerAudioDSP && typeof window.PlayerAudioDSP.buildDspChain === 'function') {
+        window.PlayerAudioDSP.buildDspChain(audioCtx, preMixGain);
+      }
 
       _attachPlayerListeners(playerA, 'A');
       _attachPlayerListeners(playerB, 'B');
@@ -198,11 +107,6 @@
       console.error('[AUDIO] Init failed:', err);
     }
   }
-
-  let isUserPaused = false;
-  let watchdogInterval = null;
-  let lastCurrentTime = -1;
-  let stuckSeconds = 0;
 
   function _startWatchdog() {
     if (watchdogInterval) clearInterval(watchdogInterval);
@@ -289,9 +193,6 @@
       lastCurrentTime = cur;
     }, 1000);
   }
-
-  let crossfadeInitiated = false;
-  let pendingPreload = null;
 
   function _createEqualPowerCurves(numSteps = 64) {
     const fadeIn = new Float32Array(numSteps);
@@ -507,7 +408,6 @@
         return false;
       }
     } else {
-      // Stop both players to prevent overlap from any in-flight crossfade or preload.
       for (const [p, g] of [[playerA, gainA], [playerB, gainB]]) {
         if (!p) continue;
         try {
@@ -659,6 +559,7 @@
       gain.gain.cancelScheduledValues(audioCtx.currentTime);
       gain.gain.setValueAtTime(1.0, audioCtx.currentTime);
       player.play().catch(() => {});
+      emit('trackChanged', { track: activeTrack, channel: activeChannel });
       return true;
     } catch (_) {
       return false;
@@ -697,42 +598,6 @@
     }
   }
 
-  function setVolume(pct) {
-    masterVolume = Math.max(0, Math.min(100, Number(pct))) / 100;
-    if (masterGainNode && audioCtx) {
-      const finalGain = isMuted ? 0 : masterVolume * volumeBooster;
-      masterGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      masterGainNode.gain.setValueAtTime(finalGain, audioCtx.currentTime);
-    }
-  }
-
-  function setVolumeBooster(multiplier) {
-    volumeBooster = Math.max(1.0, Math.min(3.0, Number(multiplier)));
-    setVolume(masterVolume * 100);
-  }
-
-  function toggleMute() {
-    isMuted = !isMuted;
-    setVolume(masterVolume * 100);
-    return isMuted;
-  }
-
-  function setBassBoost(gainDb) {
-    bassBoostGain = Number(gainDb);
-    if (bassBoostNode && audioCtx) {
-      bassBoostNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      bassBoostNode.gain.setValueAtTime(bassBoostGain, audioCtx.currentTime);
-    }
-  }
-
-  function setNormalizer(enabled) {
-    normalizerEnabled = Boolean(enabled);
-    if (compressorGain && bypassGain && audioCtx) {
-      compressorGain.gain.setValueAtTime(normalizerEnabled ? 1.0 : 0.0, audioCtx.currentTime);
-      bypassGain.gain.setValueAtTime(normalizerEnabled ? 0.0 : 1.0, audioCtx.currentTime);
-    }
-  }
-
   function setLoop(enabled) {
     isLoopEnabled = Boolean(enabled);
     if (playerA) playerA.loop = isLoopEnabled;
@@ -754,27 +619,9 @@
     crossfadeDuration = Math.max(0, Math.min(5.0, Number(sec)));
   }
 
-  function setEqBand(bandIdx, gainDb) {
-    if (eqFilters[bandIdx] && audioCtx) {
-      eqFilters[bandIdx].gain.cancelScheduledValues(audioCtx.currentTime);
-      eqFilters[bandIdx].gain.setValueAtTime(Number(gainDb), audioCtx.currentTime);
-    }
-  }
-
-  function setEqPreset(presetName) {
-    const values = EQ_PRESETS[presetName];
-    if (!values) return;
-    values.forEach((gain, idx) => setEqBand(idx, gain));
-  }
-
   function getAudioContext() {
     initAudioContext();
     return audioCtx;
-  }
-
-  function getAnalyserNode() {
-    initAudioContext();
-    return analyserNode;
   }
 
   function getCurrentTime() {
@@ -800,90 +647,24 @@
     return activeTrack;
   }
 
-  function setPureDirect(enabled) {
-    pureDirectEnabled = Boolean(enabled);
-    if (dspBranchGain && directBranchGain && audioCtx) {
-      dspBranchGain.gain.cancelScheduledValues(audioCtx.currentTime);
-      directBranchGain.gain.cancelScheduledValues(audioCtx.currentTime);
-      dspBranchGain.gain.setValueAtTime(pureDirectEnabled ? 0.0 : 1.0, audioCtx.currentTime);
-      directBranchGain.gain.setValueAtTime(pureDirectEnabled ? 1.0 : 0.0, audioCtx.currentTime);
-    }
-    return pureDirectEnabled;
-  }
-
-  function isPureDirect() {
-    return pureDirectEnabled;
-  }
-
-  function getVolumeBooster() {
-    return volumeBooster;
-  }
-
   function getAudioMetrics() {
     initAudioContext();
-    const metrics = {
-      timestamp: new Date().toISOString(),
-      activeChannel,
-      track: activeTrack ? { username: activeTrack.username, id: activeTrack.id, canonicalUrl: activeTrack.canonicalUrl } : null,
-      currentTime: getCurrentTime().toFixed(2) + 's',
-      duration: getDuration().toFixed(2) + 's',
-      isPlaying: isPlaying(),
-      dspState: {
-        pureDirect: pureDirectEnabled,
-        normalizerEnabled,
-        bassBoostGain: bassBoostGain + ' dB',
-        masterVolume: Math.round(masterVolume * 100) + '%',
-        volumeBooster: volumeBooster.toFixed(2) + 'x',
-        compressorReductionDb: compressorNode ? Number(compressorNode.reduction).toFixed(2) + ' dB' : '0 dB',
-      },
-      signalLevels: {
-        peakDbfs: -99,
-        rmsDbfs: -99,
-      },
-    };
-
-    if (analyserNode && isPlaying()) {
-      const bufferLength = analyserNode.frequencyBinCount;
-      const timeData = new Float32Array(bufferLength);
-      analyserNode.getFloatTimeDomainData(timeData);
-
-      let sumSquares = 0;
-      let peak = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        const val = Math.abs(timeData[i]);
-        if (val > peak) peak = val;
-        sumSquares += val * val;
-      }
-      const rms = Math.sqrt(sumSquares / bufferLength);
-
-      const peakDb = peak > 0 ? 20 * Math.log10(peak) : -99;
-      const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -99;
-
-      metrics.signalLevels.peakDbfs = Number(peakDb.toFixed(1));
-      metrics.signalLevels.rmsDbfs = Number(rmsDb.toFixed(1));
+    if (window.PlayerAudioDSP) {
+      return window.PlayerAudioDSP.getAudioMetrics(
+        activeChannel,
+        activeTrack,
+        isPlaying(),
+        getCurrentTime(),
+        getDuration()
+      );
     }
-
-    return metrics;
+    return {};
   }
 
   function logAudioDiagnostics() {
-    const m = getAudioMetrics();
-    console.group('%c🎵 [TIKTOK HI-FI STUDIO] Audio Metrics & DSP Diagnostics', 'color: #8b9cf6; font-weight: bold; font-size: 13px;');
-    console.log('%c📍 Video:', 'font-weight: bold;', m.track ? `${m.track.username} (${m.track.id})` : 'None');
-    console.log('%c⏱️ Position:', 'font-weight: bold;', `${m.currentTime} / ${m.duration} (Playing: ${m.isPlaying})`);
-    console.table({
-      'Master Volume': m.dspState.masterVolume,
-      'Volume Booster': m.dspState.volumeBooster,
-      'Pure Direct (Bypass)': m.dspState.pureDirect ? 'ON (1:1 Bit-perfect)' : 'OFF',
-      'Volume Normalizer': m.dspState.normalizerEnabled ? 'ON' : 'OFF',
-      'Compressor Reduction': m.dspState.compressorReductionDb,
-      'Bass Boost': m.dspState.bassBoostGain,
-      'RMS Level': m.signalLevels.rmsDbfs + ' dBFS',
-      'Peak Level': m.signalLevels.peakDbfs + ' dBFS',
-    });
-    console.log('%c💡 Tip: Chạy getAudioDiagnostics() bất kỳ lúc nào để đo lường RMS và độ lợi dải âm.', 'color: #7fe0f5;');
-    console.groupEnd();
-    return m;
+    if (window.PlayerAudioDSP) {
+      return window.PlayerAudioDSP.logAudioDiagnostics(getAudioMetrics);
+    }
   }
 
   window.getAudioDiagnostics = logAudioDiagnostics;
@@ -899,23 +680,23 @@
     resume,
     seek,
     seekPercent,
-    setVolume,
-    setVolumeBooster,
-    getVolumeBooster,
-    setPureDirect,
-    isPureDirect,
-    toggleMute,
-    setBassBoost,
-    setNormalizer,
+    setVolume: (pct) => window.PlayerAudioDSP && window.PlayerAudioDSP.setVolume(pct),
+    setVolumeBooster: (m) => window.PlayerAudioDSP && window.PlayerAudioDSP.setVolumeBooster(m),
+    getVolumeBooster: () => window.PlayerAudioDSP ? window.PlayerAudioDSP.getVolumeBooster() : 1.0,
+    setPureDirect: (e) => window.PlayerAudioDSP && window.PlayerAudioDSP.setPureDirect(e),
+    isPureDirect: () => window.PlayerAudioDSP ? window.PlayerAudioDSP.isPureDirect() : false,
+    toggleMute: () => window.PlayerAudioDSP ? window.PlayerAudioDSP.toggleMute() : false,
+    setBassBoost: (g) => window.PlayerAudioDSP && window.PlayerAudioDSP.setBassBoost(g),
+    setNormalizer: (e) => window.PlayerAudioDSP && window.PlayerAudioDSP.setNormalizer(e),
     setLoop,
     isLoop,
     setCrossfadeDuration,
-    setEqBand,
-    setEqPreset,
+    setEqBand: (i, g) => window.PlayerAudioDSP && window.PlayerAudioDSP.setEqBand(i, g),
+    setEqPreset: (n) => window.PlayerAudioDSP && window.PlayerAudioDSP.setEqPreset(n),
     getAudioMetrics,
     logAudioDiagnostics,
     getAudioContext,
-    getAnalyserNode,
+    getAnalyserNode: () => window.PlayerAudioDSP ? window.PlayerAudioDSP.getAnalyserNode() : null,
     getCurrentTime,
     getDuration,
     isPlaying,
@@ -925,7 +706,11 @@
     off: (event, fn) => {
       if (listeners[event]) listeners[event] = listeners[event].filter(cb => cb !== fn);
     },
-    EQ_PRESETS,
-    EQ_FREQUENCIES,
+    get EQ_PRESETS() {
+      return window.PlayerAudioDSP ? window.PlayerAudioDSP.EQ_PRESETS : {};
+    },
+    get EQ_FREQUENCIES() {
+      return window.PlayerAudioDSP ? window.PlayerAudioDSP.EQ_FREQUENCIES : [];
+    },
   };
 })();

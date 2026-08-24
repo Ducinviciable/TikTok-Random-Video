@@ -57,7 +57,10 @@
         "player.html",
         "style-player.css",
         "js/player/player-cdn-refresh.js",
+        "js/player/player-audio-dsp.js",
         "js/player/player-audio.js",
+        "js/player/player-state.js",
+        "js/player/player-ui.js",
         "js/player/player-app.js"
       ],
       "matches": [

@@ -35,6 +35,24 @@ var MUTED_SOUND_KEYWORDS = [
     "muted due to copyright"
 ];
 
+// Text keywords for deleted / private / unavailable videos
+var UNAVAILABLE_VIDEO_KEYWORDS = [
+    "video unavailable",
+    "this video is unavailable",
+    "couldn't find this video",
+    "video is private",
+    "video not available",
+    "video hiện không khả dụng",
+    "video này hiện không khả dụng",
+    "không thể tìm thấy video này",
+    "bạn đang tìm kiếm video",
+    "hãy thử duyệt tìm các tác giả",
+    "video ở chế độ riêng tư",
+    "video này đã bị xóa",
+    "video đã bị xóa",
+    "404"
+];
+
 // Text labels for the Liked tab (multi-language)
 var LIKED_TAB_LABELS = ["Đã thích", "Liked", "liked"];
 

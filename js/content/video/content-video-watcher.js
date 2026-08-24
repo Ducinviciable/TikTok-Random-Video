@@ -38,7 +38,7 @@ function watchForVideoElement() {
     const other = videos[j];
     if (other !== targetVideo) {
       other.muted = true;
-      try { other.pause(); } catch (_) {}
+      try { other.pause(); } catch (_) { }
     }
   }
 
@@ -71,7 +71,6 @@ function watchForVideoElement() {
 
   _checkAndHealVideo(currentVideoElement);
 
-  // Force aggressive buffering + immediate playback attempt
   currentVideoElement.setAttribute("preload", "auto");
   currentVideoElement.setAttribute("playsinline", "");
   currentVideoElement.muted = false;
@@ -95,7 +94,7 @@ function watchForVideoElement() {
         console.warn("[CS] Autoplay rejected on new video:", err);
         if (err && err.name === "NotAllowedError" && currentVideoElement) {
           currentVideoElement.muted = true;
-          currentVideoElement.play().catch(function () {});
+          currentVideoElement.play().catch(function () { });
           function unmuteOnInteraction() {
             if (currentVideoElement) {
               currentVideoElement.muted = false;
@@ -147,10 +146,10 @@ function watchForVideoElement() {
       console.log("[CS] ⚡ waiting event → bump currentTime + play()");
       try {
         currentVideoElement.currentTime += 0.01;
-      } catch (e) {}
+      } catch (e) { }
       var p = currentVideoElement.play();
       if (p && p.then) {
-        p.catch(function () {});
+        p.catch(function () { });
       }
     }
   });
@@ -170,14 +169,13 @@ function watchForVideoElement() {
         ) {
           var p = currentVideoElement.play();
           if (p && p.then) {
-            p.catch(function () {});
+            p.catch(function () { });
           }
         }
       }, 300);
     }
   });
 
-  // Start 6-second stuck monitor and check audio/shop after video loads
   if (typeof startStuckMonitor === "function") {
     startStuckMonitor();
   }
@@ -185,12 +183,9 @@ function watchForVideoElement() {
     setTimeout(checkVideoAudioAndShop, 2500);
   }
 
-  // CRITICAL: Keep loop ON to prevent TikTok's auto-advance to next feed video
   if (!currentVideoElement.hasAttribute("loop")) {
     currentVideoElement.setAttribute("loop", "");
   }
-
-  // Guard: Watch for TikTok re-removing the loop attribute
   loopObserver = new MutationObserver(function () {
     if (
       currentVideoElement &&
@@ -206,18 +201,17 @@ function watchForVideoElement() {
     attributeFilter: ["loop"],
   });
 
-  // timeupdate is the PRIMARY detection method (ended won't fire with loop on)
   currentVideoElement.addEventListener("timeupdate", onVideoTimeUpdate);
-  // ended is a SAFETY NET only (fires if loop is somehow removed)
   currentVideoElement.addEventListener("ended", onVideoEnded);
 }
 
 function initVideoWatcher() {
-  chrome.storage.local.get(["autoNextEnabled"], function (data) {
+  chrome.storage.local.get(["autoNextEnabled", "healingModeActive"], function (data) {
     if (data.autoNextEnabled === false) return;
     if (!window.location.href.includes("/video/")) return;
 
     videoWatcherActive = true;
+    _checkAndHealVideo();
     watchForVideoElement();
 
     if (!currentVideoElement) {
@@ -225,11 +219,43 @@ function initVideoWatcher() {
       const checkInterval = setInterval(function () {
         watchForVideoElement();
         attempts++;
-        if (currentVideoElement || !videoWatcherActive || attempts > 30) {
+        if (currentVideoElement || !videoWatcherActive) {
           clearInterval(checkInterval);
+        } else if (attempts > 30) {
+          clearInterval(checkInterval);
+          if (data.healingModeActive && !playNextRequested) {
+            console.log("[CS] ⚡ Batch Healing: Video load timeout → Bỏ qua video");
+            requestNextVideo();
+          }
         }
       }, 500);
     }
+  });
+}
+
+function _isPageVideoUnavailable() {
+  const bodyText = (document.body ? document.body.innerText || "" : "").toLowerCase();
+  const pageTitle = (document.title || "").toLowerCase();
+
+  const keywords = typeof UNAVAILABLE_VIDEO_KEYWORDS !== "undefined" ? UNAVAILABLE_VIDEO_KEYWORDS : [
+    "video unavailable",
+    "this video is unavailable",
+    "couldn't find this video",
+    "video is private",
+    "video not available",
+    "video hiện không khả dụng",
+    "video này hiện không khả dụng",
+    "không thể tìm thấy video này",
+    "bạn đang tìm kiếm video",
+    "hãy thử duyệt tìm các tác giả",
+    "video ở chế độ riêng tư",
+    "video này đã bị xóa",
+    "video đã bị xóa",
+    "404"
+  ];
+
+  return keywords.some(function (kw) {
+    return bodyText.includes(kw.toLowerCase()) || pageTitle.includes(kw.toLowerCase());
   });
 }
 
@@ -237,35 +263,74 @@ function _checkAndHealVideo(videoEl) {
   const canonicalUrl = window.location.href.split("?")[0];
   if (!canonicalUrl.includes("/video/")) return;
 
-  chrome.storage.local.get(["healingQueue", "healingEnabled"], function (data) {
+  chrome.storage.local.get(["healingQueue", "healingEnabled", "healingModeActive"], function (data) {
     if (data.healingEnabled === false) return;
     const queue = data.healingQueue || [];
+    const isBatchMode = data.healingModeActive === true;
+    const pendingList = queue.filter((e) => e.status === "pending");
+
+    if (isBatchMode) {
+      isBatchHealingActive = true;
+      if (typeof renderBatchHealingHUD === "function") {
+        renderBatchHealingHUD(pendingList.length, queue.length);
+      }
+    }
+
     const entry = queue.find(
       (e) => isMatchingTikTokVideo(e.url, canonicalUrl) && e.status === "pending",
     );
-    if (!entry) return;
+    if (!entry && !isBatchMode) return;
 
-    // Check if the page itself signals the video is unavailable/deleted
-    const bodyText = document.body ? document.body.innerText || "" : "";
-    const isUnavailable =
-      bodyText.includes("Video unavailable") ||
-      bodyText.includes("This video is unavailable") ||
-      bodyText.includes("Couldn't find this video") ||
-      document.title.toLowerCase().includes("404");
-
-    if (isUnavailable) {
+    function triggerDeadSkip() {
       chrome.runtime.sendMessage(
         { action: "markHealingDead", canonicalUrl },
         function () {
-          if (chrome.runtime.lastError) {}
+          if (chrome.runtime.lastError) { }
         },
       );
+      if (isBatchMode) {
+        if (typeof showToast === "function") {
+          showToast("Video không khả dụng → Bỏ qua sau 2s", "warning");
+        }
+        setTimeout(function () {
+          if (!playNextRequested) requestNextVideo();
+        }, 2000);
+      }
+    }
+
+    if (_isPageVideoUnavailable()) {
+      triggerDeadSkip();
       return;
+    }
+
+    var deadObserver = null;
+    if (document.body) {
+      deadObserver = new MutationObserver(function () {
+        if (_isPageVideoUnavailable()) {
+          if (deadObserver) {
+            deadObserver.disconnect();
+            deadObserver = null;
+          }
+          clearInterval(pollInterval);
+          triggerDeadSkip();
+        }
+      });
+      deadObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
     }
 
     var attempts = 0;
     var pollInterval = setInterval(function () {
       attempts++;
+
+      if (_isPageVideoUnavailable()) {
+        if (deadObserver) {
+          deadObserver.disconnect();
+          deadObserver = null;
+        }
+        clearInterval(pollInterval);
+        triggerDeadSkip();
+        return;
+      }
 
       var liveEl = currentVideoElement || videoEl || document.querySelector("video");
       var isHealed =
@@ -274,6 +339,10 @@ function _checkAndHealVideo(videoEl) {
         (liveEl.readyState >= 2 || liveEl.currentTime > 0 || (liveEl.duration > 0 && !liveEl.paused));
 
       if (isHealed) {
+        if (deadObserver) {
+          deadObserver.disconnect();
+          deadObserver = null;
+        }
         clearInterval(pollInterval);
         var rawSrc = liveEl.currentSrc || liveEl.src || "";
         var directCdnUrl =
@@ -283,18 +352,44 @@ function _checkAndHealVideo(videoEl) {
         chrome.runtime.sendMessage(
           { action: "healVideo", canonicalUrl, newCdnUrl: directCdnUrl },
           function () {
-            if (chrome.runtime.lastError) {}
+            if (chrome.runtime.lastError) { }
           },
         );
         if (typeof showToast === "function") {
           showToast("Chúc mừng video đã hồi sinh 🤩", "success");
         }
+
+        if (isBatchMode) {
+          var ratio = 0.10 + Math.random() * (0.25 - 0.10);
+          var dur = liveEl.duration && isFinite(liveEl.duration) ? liveEl.duration : 15;
+          batchHealingTargetTime = Math.max(dur * ratio, 2.5);
+          batchHealingDone = true;
+          console.log(
+            "[CS] ⚡ Batch Healing: Target skip at " +
+            (ratio * 100).toFixed(0) +
+            "% (" +
+            batchHealingTargetTime.toFixed(1) +
+            "s / " +
+            dur.toFixed(1) +
+            "s)",
+          );
+        }
         return;
       }
 
       if (attempts >= 30) {
+        if (deadObserver) {
+          deadObserver.disconnect();
+          deadObserver = null;
+        }
         clearInterval(pollInterval);
+        if (isBatchMode) {
+          setTimeout(function () {
+            if (!playNextRequested) requestNextVideo();
+          }, 2000);
+        }
       }
     }, 500);
   });
 }
+

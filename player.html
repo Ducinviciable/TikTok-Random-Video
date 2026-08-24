@@ -59,6 +59,10 @@
             <strong id="stat-healing-healed">0</strong>
             <span>Đã hồi sinh</span>
           </div>
+          <button class="stat-card stat-heal-btn" id="btn-heal-all" title="Bắt đầu hồi sinh toàn bộ video lỗi trên TikTok">
+            <strong class="heal-btn-icon">⚡</strong>
+            <span>Hồi sinh tất cả</span>
+          </button>
         </div>
 
         <div class="tabs" role="tablist">
@@ -389,8 +393,25 @@
     </button>
   </div>
 
+  <div class="modal-overlay" id="modal-heal-confirm" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-heal-title">
+      <div class="modal-icon" aria-hidden="true">⚡</div>
+      <h3 id="modal-heal-title">Bắt đầu hồi sinh video?</h3>
+      <p class="modal-desc">
+        Phát hiện <strong id="modal-pending-count" style="color:var(--accent-amber)">0</strong> video stream bị lỗi cần làm mới. Bạn có muốn chuyển sang TikTok để hệ thống tự động phát và làm mới toàn bộ danh sách này không?
+      </p>
+      <div class="modal-actions">
+        <button class="modal-btn secondary" id="btn-cancel-heal">Để sau</button>
+        <button class="modal-btn primary" id="btn-confirm-heal-tiktok">Chuyển qua TikTok ngay</button>
+      </div>
+    </div>
+  </div>
+
   <script src="js/player/player-cdn-refresh.js"></script>
+  <script src="js/player/player-audio-dsp.js"></script>
   <script src="js/player/player-audio.js"></script>
+  <script src="js/player/player-state.js"></script>
+  <script src="js/player/player-ui.js"></script>
   <script src="js/player/player-app.js"></script>
 </body>
 
