@@ -260,6 +260,7 @@ function _isPageVideoUnavailable() {
 }
 
 function _checkAndHealVideo(videoEl) {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return;
   const canonicalUrl = window.location.href.split("?")[0];
   if (!canonicalUrl.includes("/video/")) return;
 

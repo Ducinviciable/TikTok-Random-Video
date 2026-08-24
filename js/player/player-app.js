@@ -7,6 +7,11 @@
   let skipCooldownTimer = null;
   let lastNavigationTime = 0;
   let searchDebounceTimer = null;
+  let isWaitingForNetwork = false;
+  let networkPendingTrack = null;
+  let networkStabilizeTimer = null;
+  let networkHeartbeatTimer = null;
+  let isHeartbeatChecking = false;
   const recentlyEnqueuedHealing = new Map();
   const HEALING_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -34,6 +39,13 @@
 
   function enqueueForHealing(track, reason) {
     if (!track || !track.canonicalUrl) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      console.warn('[APP] 🛡️ Ignored enqueueForHealing: Browser is offline');
+      return;
+    }
+    if (reason && (reason.includes('offline') || reason.includes('network'))) {
+      return;
+    }
     const now = Date.now();
     const lastEnqueued = recentlyEnqueuedHealing.get(track.canonicalUrl) || 0;
     if (now - lastEnqueued < HEALING_COOLDOWN_MS) {
@@ -66,7 +78,7 @@
     await startPlayback(track);
   }
 
-  async function startPlayback(track) {
+  async function startPlayback(track, retryCount = 0) {
     clearSkipCooldown();
     state.playing = true;
     state.activeId = track.id;
@@ -89,6 +101,14 @@
     console.log('[APP] CDN Result for', track.username, 'source:', cdnResult.source || 'unknown', cdnResult);
 
     if (cdnResult && cdnResult.ok && cdnResult.cdnUrl) {
+      isWaitingForNetwork = false;
+      networkPendingTrack = null;
+      if (networkHeartbeatTimer) {
+        clearInterval(networkHeartbeatTimer);
+        networkHeartbeatTimer = null;
+      }
+      PlayerUI.hideNetworkAlert();
+
       if (cdnResult.cover && !track.thumb) {
         track.thumb = cdnResult.cover;
         PlayerUI.highlightTrack(track.id);
@@ -106,19 +126,33 @@
           if (window.PlayerCDN) {
             PlayerCDN.invalidateCdnCache(track.canonicalUrl);
           }
-          enqueueForHealing(track, 'playback_failed');
-          PlayerUI.showToast(`⚠️ Không thể phát video của ${track.username}, thử bài kế tiếp`);
-          scheduleAutoSkip(track.id);
+          if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            handleNetworkOffline(track);
+          } else {
+            enqueueForHealing(track, 'playback_failed');
+            PlayerUI.showToast(`⚠️ Không thể phát video của ${track.username}, thử bài kế tiếp`);
+            scheduleAutoSkip(track.id);
+          }
         }
       }
     } else {
       if (window.PlayerCDN) {
         PlayerCDN.invalidateCdnCache(track.canonicalUrl);
       }
-      console.warn('[APP] CDN refresh unavailable for:', track.canonicalUrl, cdnResult ? cdnResult.error : '');
-      enqueueForHealing(track, 'cdn_expired');
-      PlayerUI.showToast(`⚠️ Không thể phát video của ${track.username}, thử bài kế tiếp`);
-      scheduleAutoSkip(track.id);
+      const isNetErr = (cdnResult && cdnResult.isNetworkError) || (typeof navigator !== 'undefined' && !navigator.onLine);
+      if (isNetErr) {
+        if (retryCount < 2 && typeof navigator !== 'undefined' && navigator.onLine) {
+          console.log(`[APP] ⏳ Network warming up, retry ${retryCount + 1}/2 in 1.2s...`);
+          await new Promise(r => setTimeout(r, 1200));
+          return startPlayback(track, retryCount + 1);
+        }
+        handleNetworkOffline(track);
+      } else {
+        console.warn('[APP] CDN refresh unavailable for:', track.canonicalUrl, cdnResult ? cdnResult.error : '');
+        enqueueForHealing(track, 'cdn_expired');
+        PlayerUI.showToast(`⚠️ Không thể phát video của ${track.username}, thử bài kế tiếp`);
+        scheduleAutoSkip(track.id);
+      }
     }
 
     updateMediaSession(track);
@@ -552,6 +586,7 @@
 
     PlayerAudio.on('play', () => {
       clearSkipCooldown();
+      PlayerUI.hideNetworkAlert();
     });
 
     PlayerAudio.on('preloadNeeded', async () => {
@@ -581,7 +616,7 @@
       handleTrackEnded();
     });
 
-    PlayerAudio.on('error', ({ track, error }) => {
+    PlayerAudio.on('error', ({ track, error, isNetworkError }) => {
       console.warn('[APP] PlayerAudio error on track:', track ? track.username : 'unknown', error);
       if (window.PlayerAudio && PlayerAudio.isPlaying() && PlayerAudio.getCurrentTime() > 0.5) {
         console.log('[APP] Suppressing error skip - track is playing');
@@ -590,6 +625,13 @@
       if (track && window.PlayerCDN) {
         PlayerCDN.invalidateCdnCache(track.canonicalUrl);
       }
+
+      const isOffline = isNetworkError || (typeof navigator !== 'undefined' && !navigator.onLine);
+      if (isOffline) {
+        handleNetworkOffline(track);
+        return;
+      }
+
       const isStalled = error && (error.message && error.message.includes('stalled'));
       enqueueForHealing(track, isStalled ? 'playback_stalled' : 'stream_error');
       const trackName = track && track.username ? track.username : 'bài hát này';
@@ -617,6 +659,113 @@
     }
   }
 
+  async function checkConnectivity() {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return false;
+    }
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      await fetch('https://www.tiktok.com/favicon.ico', {
+        method: 'HEAD',
+        mode: 'no-cors',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return true;
+    } catch (_) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
+        await fetch('https://tikwm.com/favicon.ico', {
+          method: 'HEAD',
+          mode: 'no-cors',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  function handleNetworkOffline(track) {
+    isWaitingForNetwork = true;
+    clearSkipCooldown();
+    if (track) {
+      networkPendingTrack = track;
+    } else if (state.activeId) {
+      networkPendingTrack = state.tracks.find(t => t.id === state.activeId) || null;
+    }
+    if (window.PlayerAudio) {
+      PlayerAudio.stopAll();
+    }
+    PlayerUI.showNetworkAlert('offline');
+    startNetworkHeartbeat();
+  }
+
+  function handleNetworkRestored() {
+    console.log('[APP] 🌐 Network connectivity verified as online');
+    if (networkHeartbeatTimer) {
+      clearInterval(networkHeartbeatTimer);
+      networkHeartbeatTimer = null;
+    }
+    isWaitingForNetwork = false;
+    PlayerUI.showNetworkAlert('online');
+
+    if (networkStabilizeTimer) clearTimeout(networkStabilizeTimer);
+    networkStabilizeTimer = setTimeout(async () => {
+      networkStabilizeTimer = null;
+      const target = networkPendingTrack || (state.activeId ? state.tracks.find(t => t.id === state.activeId) : null) || state.tracks[0];
+      if (target) {
+        console.log('[APP] 🚀 Resuming playback for:', target.username);
+        await startPlayback(target);
+      }
+    }, 600);
+  }
+
+  function startNetworkHeartbeat() {
+    if (networkHeartbeatTimer) clearInterval(networkHeartbeatTimer);
+    networkHeartbeatTimer = setInterval(async () => {
+      if (!isWaitingForNetwork) {
+        clearInterval(networkHeartbeatTimer);
+        networkHeartbeatTimer = null;
+        return;
+      }
+      if (isHeartbeatChecking) return;
+      isHeartbeatChecking = true;
+      try {
+        const isConnected = await checkConnectivity();
+        if (isConnected && isWaitingForNetwork) {
+          clearInterval(networkHeartbeatTimer);
+          networkHeartbeatTimer = null;
+          handleNetworkRestored();
+        }
+      } finally {
+        isHeartbeatChecking = false;
+      }
+    }, 2000);
+  }
+
+  function initNetworkListeners() {
+    window.addEventListener('offline', () => {
+      console.warn('[APP] 📡 Network disconnected (offline event)');
+      handleNetworkOffline(state.tracks.find(t => t.id === state.activeId));
+    });
+
+    window.addEventListener('online', () => {
+      console.log('[APP] 🌐 Network reconnected (online event)');
+      handleNetworkRestored();
+    });
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      handleNetworkOffline(null);
+    }
+  }
+
   Object.assign(window, {
     togglePlay, nextTrack, previousTrack,
     toggleShuffle, toggleLoop, banCurrentTrack,
@@ -639,6 +788,7 @@
   initKeyboard();
   initUIEventListeners();
   initAudioEventListeners();
+  initNetworkListeners();
   PlayerUI.refreshUI();
   PlayerState.tryLoadFromStorage();
   PlayerState.loadStoredPreferences();

@@ -554,6 +554,59 @@
     dom.modalHealConfirm.hidden = true;
   }
 
+  let networkAlertDismissTimer = null;
+
+  function showNetworkAlert(type) {
+    const dom = getDom();
+    if (!dom.networkOverlay) return;
+
+    if (networkAlertDismissTimer) {
+      clearTimeout(networkAlertDismissTimer);
+      networkAlertDismissTimer = null;
+    }
+
+    const isOffline = type === 'offline';
+    dom.networkOverlay.classList.toggle('is-offline', isOffline);
+    dom.networkOverlay.classList.toggle('is-online', !isOffline);
+
+    if (dom.networkIcon) {
+      dom.networkIcon.textContent = isOffline ? '📡' : '⚡';
+    }
+    if (dom.networkTitle) {
+      dom.networkTitle.textContent = isOffline ? 'Mất kết nối Internet' : 'Đã khôi phục kết nối!';
+    }
+    if (dom.networkDesc) {
+      dom.networkDesc.textContent = isOffline
+        ? 'Trình phát đã tạm dừng để bảo vệ danh sách phát. Sẽ tự động tiếp tục phát ngay khi có mạng trở lại...'
+        : 'Đã nhận tín hiệu mạng internet. Đang tiếp tục phát bài hát...';
+    }
+    if (dom.networkBadgeText) {
+      dom.networkBadgeText.textContent = isOffline ? 'Đang chờ kết nối lại...' : 'Đã kết nối lại thành công';
+    }
+
+    dom.networkOverlay.hidden = false;
+    requestAnimationFrame(() => {
+      dom.networkOverlay.classList.add('is-open');
+    });
+
+    if (!isOffline) {
+      networkAlertDismissTimer = setTimeout(() => {
+        hideNetworkAlert();
+      }, 2000);
+    }
+  }
+
+  function hideNetworkAlert() {
+    const dom = getDom();
+    if (!dom.networkOverlay) return;
+    dom.networkOverlay.classList.remove('is-open');
+    setTimeout(() => {
+      if (!dom.networkOverlay.classList.contains('is-open')) {
+        dom.networkOverlay.hidden = true;
+      }
+    }, 320);
+  }
+
   window.PlayerUI = {
     updateVirtualScroll,
     refreshUI,
@@ -578,5 +631,7 @@
     hideToast,
     openHealConfirmModal,
     closeHealConfirmModal,
+    showNetworkAlert,
+    hideNetworkAlert,
   };
 })();

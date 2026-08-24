@@ -133,12 +133,14 @@
           if (stuckSeconds === 4) {
             try { player.play().catch(() => {}); } catch (_) {}
           } else if (stuckSeconds >= 12) {
-            console.warn('[AUDIO] ⚠️ Track metadata load timeout > 12s → skipping');
+            const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+            console.warn('[AUDIO] ⚠️ Track metadata load timeout > 12s → ' + (isOffline ? 'network offline' : 'skipping'));
             stuckSeconds = 0;
             emit('error', {
               channel: activeChannel,
-              error: new Error('Track metadata load timeout (12s)'),
+              error: new Error(isOffline ? 'Network disconnected (load timeout)' : 'Track metadata load timeout (12s)'),
               track: activeTrack,
+              isNetworkError: isOffline,
             });
             return;
           }
@@ -178,12 +180,14 @@
         if (stuckSeconds === 4 || stuckSeconds === 8) {
           try { player.play().catch(() => {}); } catch (_) {}
         } else if (stuckSeconds >= 12) {
-          console.warn('[AUDIO] ⚠️ Playback stuck > 12s → emitting error for auto-skip');
+          const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+          console.warn('[AUDIO] ⚠️ Playback stuck > 12s → ' + (isOffline ? 'network offline' : 'emitting error for auto-skip'));
           stuckSeconds = 0;
           emit('error', {
             channel: activeChannel,
-            error: new Error('Playback stalled timeout (12s)'),
+            error: new Error(isOffline ? 'Network disconnected (playback stalled)' : 'Playback stalled timeout (12s)'),
             track: activeTrack,
+            isNetworkError: isOffline,
           });
           return;
         }
@@ -282,14 +286,28 @@
         httpStatus: null,
       };
 
-      if (fullSrc.startsWith('http://') || fullSrc.startsWith('https://')) {
+      let isNetworkErr = false;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        isNetworkErr = true;
+      } else if (err && err.code === 2) {
+        isNetworkErr = true;
+      } else if (fullSrc.startsWith('http://') || fullSrc.startsWith('https://')) {
         try {
-          const probe = await fetch(fullSrc, { method: 'HEAD' }).catch(() => null);
+          const probe = await fetch(fullSrc, { method: 'HEAD', cache: 'no-store' }).catch(() => null);
           if (probe) {
             errorPayload.httpStatus = probe.status;
             errorPayload.httpStatusText = probe.statusText;
+            if (probe.status >= 500) {
+              isNetworkErr = true;
+            }
+          } else {
+            isNetworkErr = true;
           }
-        } catch (_) {}
+        } catch (_) {
+          isNetworkErr = true;
+        }
+      } else {
+        isNetworkErr = typeof navigator !== 'undefined' && !navigator.onLine;
       }
 
       console.error('[AUDIO] ❌ Media Playback Error:', errorPayload);
@@ -302,7 +320,14 @@
           console.warn('[AUDIO] Ignored transient error during active playback');
           return;
         }
-        emit('error', { channel: channelName, error: player.error, track: activeTrack, fullSrc, errorPayload });
+        emit('error', {
+          channel: channelName,
+          error: player.error,
+          track: activeTrack,
+          fullSrc,
+          errorPayload,
+          isNetworkError: isNetworkErr,
+        });
       }
     });
 
@@ -403,8 +428,9 @@
 
         return true;
       } catch (err) {
+        const isNetErr = typeof navigator !== 'undefined' && !navigator.onLine;
         console.error('[AUDIO] play() call rejected:', err);
-        emit('error', { channel: targetChannel, error: err, track });
+        emit('error', { channel: targetChannel, error: err, track, isNetworkError: isNetErr });
         return false;
       }
     } else {
@@ -430,8 +456,9 @@
         emit('trackChanged', { track, channel: activeChannel });
         return true;
       } catch (err) {
+        const isNetErr = typeof navigator !== 'undefined' && !navigator.onLine;
         console.error('[AUDIO] play() call rejected:', err);
-        emit('error', { channel: activeChannel, error: err, track });
+        emit('error', { channel: activeChannel, error: err, track, isNetworkError: isNetErr });
         return false;
       }
     }

@@ -407,6 +407,22 @@
     </div>
   </div>
 
+  <!-- CENTER NETWORK ALERT OVERLAY -->
+  <div class="network-overlay" id="network-overlay" hidden>
+    <div class="network-card" id="network-card" role="alert" aria-live="assertive">
+      <div class="network-icon-wrapper" id="network-icon-wrapper">
+        <div class="network-pulse-ring"></div>
+        <div class="network-icon" id="network-icon">📡</div>
+      </div>
+      <h2 id="network-title">Mất kết nối Internet</h2>
+      <p id="network-desc">Trình phát đã tạm dừng để bảo vệ danh sách phát. Sẽ tự động tiếp tục phát ngay khi có mạng trở lại...</p>
+      <div class="network-status-badge" id="network-badge">
+        <span class="network-dot"></span>
+        <span id="network-badge-text">Đang chờ kết nối lại...</span>
+      </div>
+    </div>
+  </div>
+
   <script src="js/player/player-cdn-refresh.js"></script>
   <script src="js/player/player-audio-dsp.js"></script>
   <script src="js/player/player-audio.js"></script>

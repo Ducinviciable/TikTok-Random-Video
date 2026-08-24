@@ -280,6 +280,11 @@ async function handleEnqueueForHealing(request) {
     return { success: false, error: "Invalid URL" };
   }
 
+  const reason = (request.reason || "").toLowerCase();
+  if (reason.includes("offline") || reason.includes("network") || reason.includes("disconnected")) {
+    return { success: false, error: "Network error ignored for healing queue" };
+  }
+
   let queue = await _getHealingQueue();
 
   const existing = queue.find((e) => isMatchingTikTokVideo(e.url, canonicalUrl));
