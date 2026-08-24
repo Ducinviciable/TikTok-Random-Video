@@ -251,7 +251,7 @@ async function handleSetAutoNext(enabled) {
   return { success: true };
 }
 
-const HEALING_MAX_ENTRIES = 50;
+const HEALING_MAX_ENTRIES = 500;
 const HEALING_MAX_RETRIES = 3;
 const HEALING_CLEANUP_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -278,6 +278,11 @@ async function handleEnqueueForHealing(request) {
   const canonicalUrl = (request.canonicalUrl || "").split("?")[0];
   if (!canonicalUrl || !canonicalUrl.includes("/video/")) {
     return { success: false, error: "Invalid URL" };
+  }
+
+  const reason = (request.reason || "").toLowerCase();
+  if (reason.includes("offline") || reason.includes("network") || reason.includes("disconnected")) {
+    return { success: false, error: "Network error ignored for healing queue" };
   }
 
   let queue = await _getHealingQueue();
@@ -353,4 +358,31 @@ async function handleClearHealingQueue() {
   await chrome.storage.local.remove(["healingQueue"]);
   return { success: true };
 }
+
+async function handleStartBatchHealing() {
+  try {
+    const queue = await _getHealingQueue();
+    const pending = queue.filter((e) => e.status === "pending");
+    if (pending.length === 0) {
+      await chrome.storage.local.set({ healingModeActive: false });
+      return { success: false, error: "Không có video nào cần hồi sinh" };
+    }
+
+    await chrome.storage.local.set({ healingModeActive: true });
+
+    const firstUrl = pending[0].url;
+    const tab = await getOrCreateTikTokTab(firstUrl);
+
+    return { success: true, count: pending.length, tabId: tab ? tab.id : null };
+  } catch (err) {
+    console.error("[BG] handleStartBatchHealing error:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+async function handleStopBatchHealing() {
+  await chrome.storage.local.set({ healingModeActive: false });
+  return { success: true };
+}
+
 

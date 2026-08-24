@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎬 TikTok Random Liked ❤️ (v3.5.1)
+# 🎬 TikTok Random Liked ❤️ (v3.5.4)
 
 <p><strong>Chrome / Edge Extension cao cấp giúp xem & nghe ngẫu nhiên kho video đã thích (Liked) trên TikTok với hai chế độ: Tự động chuyển video trên tab TikTok hoặc Trình phát độc lập TikTok Hi-Fi Studio.</strong></p>
 
@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/manifest-v3-a855f7?style=for-the-badge" alt="manifest v3" />
 </p>
 
-<p><em>Tự động chuyển video (Auto-Next), Trình phát nhạc Hi-Fi Studio độc lập (10-Band EQ, Deep Bass, Volume Booster 300%), chống nhảy sang luồng gợi ý TikTok, bỏ qua video đứng / không âm thanh / TikTok Shop, và tự khôi phục thông minh khi gặp lỗi 403 / Access Denied.</em></p>
+<p><em>Tự động chuyển video (Auto-Next), Trình phát nhạc Hi-Fi Studio độc lập (10-Band EQ, Pure Direct 1:1, Dynamics Compressor +3.5dB Makeup Gain, Volume Booster 2.0x), phân giải stream đa cấp (TikWM, Cobalt, TikSave, Direct DNR), Healing Queue tự hồi phục video lỗi, và tự khôi phục thông minh khi gặp lỗi 403 / Access Denied.</em></p>
 
 </div>
 
@@ -22,13 +22,20 @@
 ### 1. 🎧 Trình Phát Độc Lập — TikTok Hi-Fi Studio
 - 🚀 **Phát ngầm không cần mở tab TikTok** — Tiết kiệm 95% CPU/RAM, triệt tiêu 100% rủi ro bị WAF chặn 403 / Captcha.
 - 🎛️ **Bộ xử lý âm thanh Web Audio DSP**:
-  - **10-Band Graphic Equalizer**: Tinh chỉnh 10 dải tần (32Hz – 16kHz) với các preset tối ưu sẵn (*Flat, Bass Boost, Vocal, Electronic, Lofi*).
-  - **Deep Bass Booster**: Bộ lọc LowShelf 100Hz tăng cường âm trầm uy lực lên tới `+12dB`.
-  - **Volume Normalizer (DynamicsCompressor)**: Tự động san bằng độ chênh lệch âm lượng giữa các video.
-  - **Volume Booster 300%**: Khuếch đại tối đa biên độ cho các video âm lượng yếu.
+  - **10-Band Graphic Equalizer**: Tinh chỉnh 10 dải tần (32Hz – 16kHz) với preset mặc định `Flat` 0dB bảo toàn headroom dải cao.
+  - **Warm Mid-Bass Boost**: Tối ưu dải trầm 125–250Hz tạo độ ấm sâu mà không làm méo âm sắc.
+  - **Volume Normalizer & Makeup Gain (+3.5 dB)**: DynamicsCompressor (-12 dBFS, 2:1) kết hợp `makeupGainNode` san bằng âm lượng mượt mà, loại bỏ hiện tượng hụt âm.
+  - **Pure Direct Mode (1:1 Bit-perfect Bypass)**: Bỏ qua 100% chuỗi DSP để nghe âm thanh nguyên bản từ nguồn phát.
+  - **Volume Booster 4 Mức (1.0x – 2.0x)**: Khuếch đại âm lượng an toàn cho các video thu âm nhỏ.
+- 🛡️ **Tầng Phân Giải Luồng Media Đa Cấp (Stream Resolver Hierarchy)**:
+  - **Cấp 1 — TikWM Proxy Stream**: Luồng AAC 128kbps gốc, 200–300ms, mở CORS, chống 403 tuyệt đối.
+  - **Cấp 2 & 3 — Cobalt / TikSave API**: Cầu nối trích xuất dự phòng độ tin cậy cao.
+  - **Cấp 4 — Direct TikTok CDN (JIT Silent Fetch)**: Kết hợp **DNR Rule 99002** tự động chèn `Referer` và `Origin` vào request.
+  - **RAM Caching 20 Phút**: Lưu đệm link CDN trong RAM để phát lại tức thì 0ms và prefetch mượt mà 3 bài kế tiếp.
+- 🩹 **Healing Queue (Cơ Chế Tự Phục Hồi Video Lỗi)**: Tự động ghi nhận bài lỗi, áp dụng cooldown 5 phút chống spam request, và làm mới link CDN ngầm trong background.
 - 🔀 **Dual-Buffer Crossfade (A/B)**: Tự động nạp trước bài tiếp theo ở 85% thời lượng và chuyển bài mượt mà không khoảng lặng (Fade 2.5s).
 - 📊 **Real-time Spectrum Visualizer**: Đồ thị phổ tần số 32 cột sóng nhảy theo nhịp nhạc FFT và đĩa than Vinyl quay đồng bộ.
-- 📂 **Kéo thả JSON Backup v3.1**: Nạp trực tiếp kho 3.000+ video từ file backup của extension.
+- 📂 **Virtual Scroll Playlist & Kéo thả JSON Backup v3.1**: Giữ RAM ổn định 100–130MB cho danh sách 3.000+ video.
 
 ### 2. 🎬 Trình Điều Khiển Tab — TikTok Web Controller
 - 🎲 **Random Video Đã Like** — Mở & xem ngẫu nhiên video từ danh sách đã thích lưu trong bộ nhớ tạm (cache).
@@ -59,15 +66,15 @@ Toàn bộ mã nguồn được module hóa cao cấp theo nguyên tắc đơn t
 
 ```
 Random-Video/
-├── manifest.json                        # Cấu hình gốc Manifest V3 (permissions, icons, DNR, host_permissions)
+├── manifest.json                        # Cấu hình gốc Manifest V3 (v3.5.4, permissions, DNR, host_permissions)
 ├── background.js                        # Service Worker Root: Nạp importScripts, Central Message Router
 ├── content.js                           # Content Script Entry Point: Message listener, SPA Observer, AutoInit
-├── player.html                          # Giao diện chính của Trình phát TikTok Hi-Fi Studio (Grid 4 panel phẳng)
+├── player.html                          # Giao diện chính của Trình phát TikTok Hi-Fi Studio
 ├── style-player.css                     # Bảng kiểu CSS Glassmorphism & Audio Visualizer Animations
 ├── popup.html                           # Giao diện Popup điều khiển
 ├── popup.js                             # Popup Main Controller: Gắn sự kiện nút bấm & khởi tạo UI
 ├── style.css                            # Bảng kiểu CSS cho Popup (Dark Mode, hiệu ứng, toggle slider)
-├── README.md                            # Tài liệu tổng quan dự án (v3.5.1)
+├── README.md                            # Tài liệu tổng quan dự án (v3.5.4)
 ├── icons/                               # Icon extension đa kích thước (16px, 48px, 128px)
 │   └── icon.png
 │
@@ -75,14 +82,15 @@ Random-Video/
 │   ├── background/                      # 📦 Các module chuyên biệt cho Background Service Worker
 │   │   ├── bg-playback.js               # Thuật toán chọn video random không trùng lặp, peek 70%, skip, ban, auto-next
 │   │   ├── bg-collections.js            # Quản lý vòng đời Crawler Job, tự động cuộn trang từ background
-│   │   ├── bg-storage.js                # Quản lý storage progressState, Checkpoint CRUD, Video CRUD, Blacklist, Backup JSON
-│   │   ├── bg-recovery.js               # Phục hồi 403 bậc thang (Tiered 403), Reset window 5 phút, chẩn đoán tab, Watchdog
-│   │   └── bg-player.js                 # JIT Silent Fetch Engine, TikWM stream prioritization & DNR CORS Isolator
+│   │   ├── bg-storage.js                # Quản lý storage progressState, Checkpoint, Healing Queue, Video CRUD, Backup
+│   │   ├── bg-recovery.js               # Phục hồi 403 bậc thang (Tiered 403), Reset window 5 phút, Watchdog
+│   │   ├── bg-player.js                 # JIT Silent Fetch Engine, TikWM prioritization & DNR CORS Isolator
+│   │   └── bg-fallback.js               # Phân giải luồng media đa cấp (TikWM, Cobalt, TikSave, Direct)
 │   │
 │   ├── player/                          # 🎧 Các module dành riêng cho Trình phát TikTok Hi-Fi Studio
-│   │   ├── player-app.js                # Khởi tạo giao diện, Queue, Drag-Drop JSON v3.1, Keyboard, Spectrum Canvas
-│   │   ├── player-audio.js              # Web Audio DSP Engine (10-Band EQ, Bass Boost, Compressor, Dual-Buffer Crossfade)
-│   │   └── player-cdn-refresh.js        # Client-side JIT CDN Cache & Background stream bridge
+│   │   ├── player-app.js                # Khởi tạo giao diện, Virtual Scroll, Healing stats, Keyboard, Spectrum Canvas
+│   │   ├── player-audio.js              # Web Audio DSP Engine (10-Band EQ, Pure Direct, Compressor + Makeup Gain)
+│   │   └── player-cdn-refresh.js        # Client-side JIT CDN Cache (TTL 20m) & Background stream bridge
 │   │
 │   ├── content/                         # 🛡️ Các module Content Script chạy trên trang TikTok
 │   │   ├── content-cdn-bridge.js        # Bridge trích xuất <video src> tức thời theo yêu cầu background
@@ -113,12 +121,13 @@ Random-Video/
     ├── Summary.md                       # Tài liệu tổng quan kiến trúc & tính năng (File này)
     ├── Parameter.md                     # Bảng thông số kỹ thuật, hằng số DSP và thời gian chờ
     ├── Process-Dedicated-Player.md      # Tài liệu đặc tả kỹ thuật & Lộ trình 5 Phase của Hi-Fi Studio
-    ├── Bypass.md                        # Chi tiết kỹ thuật về cơ chế bypass 6 lớp / anti-detection
+    ├── Audio-Quality-Final-Report.md    # Báo cáo chuẩn hóa âm thanh & phân tích Loudness
+    ├── Bypass.md                        # Chi tiết kỹ thuật về cơ chế bypass 6 lớp / anti-detection & DNR
+    ├── Control.md                       # Mô tả chi tiết hành vi điều khiển, DSP Graph, Resolvers & Healing Queue
     ├── Random-play-flow.md              # Sơ đồ tuần tự luồng phát ngẫu nhiên end-to-end
     ├── Realistic.md                     # Chi tiết cơ chế cuộn thực tế, Catch-up Phase & Checkpoint
     ├── Plays and Collection.md          # Chi tiết luồng phát và thu thập video
     ├── Playback-debug-plan.md           # Kế hoạch debug lỗi phát video
-    ├── Control.md                       # Mô tả chi tiết hành vi điều khiển
     └── System and User.md               # Mô hình tương tác giữa Hệ thống và Người dùng
 ```
 
@@ -160,15 +169,16 @@ Random-Video/
 4. Theo dõi sự kiện `timeupdate` & `ended`: khi thời gian còn lại `< 0.5s` hoặc phát hiện `loop-reset`, tạm dừng video và gửi yêu cầu `playNext` (kèm throttle 2 giây chống nhảy dồn dập).
 5. Background chọn video ngẫu nhiên tiếp theo và điều hướng tab qua SPA message `navigateToVideo` (không dùng `location.reload()` để tránh làm mới trang).
 
-### 3. Luồng Phát TikTok Hi-Fi Studio (JIT Silent Fetch & Web Audio DSP)
-1. **Khởi tạo hàng chờ**: Nạp từ `chrome.storage.local` hoặc kéo thả trực tiếp file backup JSON v3.1
-2. **JIT Multi-Server Fetch**: Khi chuẩn bị phát hoặc preload bài tiếp theo ở 85% thời lượng:
-   - `PlayerCDN` gửi thông điệp `refreshCdnUrl` về Background.
-   - Background điều phối qua `bg-stream-extractor.js` (Multi-Server Fallback: TikWM $\rightarrow$ Cobalt API $\rightarrow$ TikSave API $\rightarrow$ Silent Rehydration Fetch) và trả về client với TTL 15 phút.
-   - DNR Rule cô lập (`initiatorDomains: [chrome.runtime.id]`) mở quyền CORS cho tab Extension mà hoàn toàn không can thiệp vào tab TikTok.
+### 3. Luồng Phát TikTok Hi-Fi Studio (Stream Resolvers, Healing Queue & Web Audio DSP)
+1. **Khởi tạo hàng chờ**: Nạp từ `chrome.storage.local` hoặc kéo thả trực tiếp file backup JSON v3.1 vào Virtual Scroll playlist.
+2. **JIT Multi-Tier Stream Resolver**: Khi chuẩn bị phát hoặc preload bài tiếp theo ở 85% thời lượng:
+   - `PlayerCDN` kiểm tra RAM cache (TTL 20 phút).
+   - Nếu cache miss $\rightarrow$ gửi thông điệp `refreshCdnUrl` về Background.
+   - Background điều phối qua `bg-fallback.js`: **Cấp 1 (TikWM Proxy AAC 128kbps)** $\rightarrow$ **Cấp 2 (Cobalt API)** $\rightarrow$ **Cấp 3 (TikSave API)** $\rightarrow$ **Cấp 4 (Direct Silent Rehydration Fetch + DNR Rule 99002)**.
 3. **Web Audio DSP Pipeline**:
-   $$\text{Player A/B} \longrightarrow \text{Gain A/B} \longrightarrow \text{10-Band EQ} \longrightarrow \text{Bass Boost (+12dB)} \longrightarrow \text{DynamicsCompressor} \longrightarrow \text{Master Gain (300\%)} \longrightarrow \text{Speakers}$$
+   $$\text{Player A/B} \longrightarrow \text{preMixGain} \longrightarrow \begin{cases} \text{Direct Bypass Gain (1:1)} \\ \text{10-Band EQ} \rightarrow \text{Bass Boost} \rightarrow \text{Compressor} \rightarrow \text{Makeup Gain (+3.5dB)} \end{cases} \longrightarrow \text{Master Gain (Booster)} \longrightarrow \text{Speakers}$$
 4. **Dual-Buffer Crossfade (A/B)**: Khi chuyển bài, Gain kênh A giảm dần (Fade-out) đồng thời Gain kênh B tăng dần (Fade-in) trong 2.5s tạo trải nghiệm liền mạch không ngắt quãng.
+5. **Healing Queue**: Khi gặp sự cố media, tự động đưa vào hàng đợi hồi sinh với cooldown 5 phút chống spam, đồng bộ trạng thái badge `TIKWM PROXY`, `DIRECT CDN`, `RAM CACHED`.
 
 ### 4. Bộ phòng vệ 6 lớp (6-Layer Anti-Detection & Recovery)
 
@@ -178,3 +188,4 @@ Random-Video/
 - **Layer 4 (Human Behavior Simulation)**: Tự động di chuyển chuột theo đường cong Bézier mượt mà kèm rung động bàn tay (spatial jitter), micro reverse-scroll và thời gian nghỉ giải lao tự nhiên (Milestone Idle 8-15s).
 - **Layer 5 (Telemetry Interceptor)**: Chặn các request gửi dữ liệu phân tích / phát hiện bot về máy chủ TikTok (`slardar`, `mon.tiktokv.com`, `mssdk`, `sendBeacon`).
 - **Layer 6 (Error & 403 Recovery)**: Phục hồi mềm 4 giai đoạn khi gặp màn hình "Please Wait", tự động bỏ qua video đứng 6s / không âm thanh / video Shop, và kích hoạt cơ chế hồi phục 403 theo bậc thang tránh bị WAF chặn.
+

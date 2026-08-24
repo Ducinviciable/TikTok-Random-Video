@@ -59,6 +59,10 @@
             <strong id="stat-healing-healed">0</strong>
             <span>Đã hồi sinh</span>
           </div>
+          <button class="stat-card stat-heal-btn" id="btn-heal-all" title="Bắt đầu hồi sinh toàn bộ video lỗi trên TikTok">
+            <strong class="heal-btn-icon">⚡</strong>
+            <span>Hồi sinh tất cả</span>
+          </button>
         </div>
 
         <div class="tabs" role="tablist">
@@ -107,8 +111,8 @@
           <span id="track-count">0 video</span>
         </div>
 
-        <!-- Dedicated Scrollable Playlist Area -->
         <div class="playlist" id="playlist" aria-label="Danh sách video">
+          <div id="playlist-scroll-content"></div>
           <div class="empty-state" id="empty-state" hidden>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M9 18V5l12-2v13" />
@@ -156,7 +160,7 @@
             <div class="vinyl spinning" id="vinyl-el" aria-hidden="true">
               <div class="vinyl-rings"></div>
               <div class="vinyl-label" id="vinyl-label">
-                <img id="vinyl-thumb" src="" alt="" hidden onerror="this.style.display='none'; this.hidden=true;">
+                <img id="vinyl-thumb" src="" alt="" hidden>
                 <div class="vinyl-fallback" id="vinyl-fallback">
                   <svg class="vinyl-cover-art" viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
                     <defs>
@@ -205,24 +209,40 @@
 
         <div class="dsp-scroll">
 
-          <div class="control-row">
-            <div>
-              <strong>Volume normalizer</strong>
-              <span>Cân bằng âm lượng tự động</span>
+          <div class="control-row sound-mode-row" id="sound-mode-row">
+            <div class="sound-mode-info">
+              <strong id="sound-mode-title">Chế độ âm thanh</strong>
             </div>
-            <button class="switch-control on" id="normalizer-btn" aria-label="Volume normalizer on">
-              <span></span>
-            </button>
+            <div class="mode-toggle sound-mode-toggle" role="group" aria-label="Chế độ xử lý âm thanh">
+              <button class="active" id="btn-mode-hifi" data-mode="hifi" aria-pressed="true"
+                title="Hi-Fi DSP Engine: Tự động cân bằng âm lượng (Volume Normalizer) và xử lý EQ">Hi-Fi DSP</button>
+              <button id="btn-mode-direct" data-mode="direct" aria-pressed="false"
+                title="Pure Direct: Phát âm thanh mộc 1:1, bỏ qua toàn bộ xử lý DSP">Pure Direct</button>
+            </div>
           </div>
 
 
-          <div class="dsp-control">
+          <div class="dsp-control" id="booster-control">
+            <div class="control-title">
+              <span>Volume booster</span>
+              <strong id="booster-label">1.0x (Chuẩn)</strong>
+            </div>
+            <div class="booster-buttons" role="group" aria-label="Khuếch đại âm lượng">
+              <button class="booster-btn active" data-boost="1.0">1.0x</button>
+              <button class="booster-btn" data-boost="1.25">1.25x</button>
+              <button class="booster-btn" data-boost="1.5">1.5x</button>
+              <button class="booster-btn" data-boost="2.0">2.0x</button>
+            </div>
+          </div>
+
+
+          <div class="dsp-control" id="bass-control">
             <div class="control-title">
               <span>Bass boost</span>
-              <strong id="bass-label">+6 dB</strong>
+              <strong id="bass-label">0 dB</strong>
             </div>
-            <input class="range" type="range" min="-6" max="12" value="6" id="bass-range" aria-label="Bass boost"
-              aria-valuemin="-6" aria-valuemax="12" aria-valuenow="6">
+            <input class="range" type="range" min="-6" max="12" value="0" id="bass-range" aria-label="Bass boost"
+              aria-valuemin="-6" aria-valuemax="12" aria-valuenow="0">
             <div class="range-caption"><span>-6 dB</span><span>+12 dB</span></div>
           </div>
 
@@ -244,8 +264,8 @@
               <h3>10-band EQ</h3>
             </div>
             <select id="eq-preset" aria-label="EQ preset">
-              <option value="Flat">Flat</option>
-              <option value="Bass Boost" selected>Bass Boost</option>
+              <option value="Flat" selected>Flat</option>
+              <option value="Bass Boost">Bass Boost</option>
               <option value="Vocal">Vocal</option>
               <option value="Electronic">Electronic</option>
               <option value="Lofi">Lofi</option>
@@ -287,7 +307,10 @@
             <img id="now-thumb-img" src="" alt="" hidden>
           </div>
           <div class="now-playing-text">
-            <span>Đang phát</span>
+            <div class="now-playing-header">
+              <span>Đang phát</span>
+              <span class="source-badge" id="source-badge" title="Nguồn giải mã media">TIKWM PROXY</span>
+            </div>
             <strong id="now-bar-title">Chưa có bài nào</strong>
             <small id="now-bar-creator">—</small>
           </div>
@@ -351,8 +374,8 @@
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
-            <input class="range" type="range" min="0" max="100" value="72" id="volume-range" aria-label="Âm lượng chính"
-              aria-valuemin="0" aria-valuemax="100" aria-valuenow="72">
+            <input class="range" type="range" min="0" max="100" value="100" id="volume-range" aria-label="Âm lượng chính"
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
           </div>
         </div>
       </footer>
@@ -370,8 +393,41 @@
     </button>
   </div>
 
+  <div class="modal-overlay" id="modal-heal-confirm" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-heal-title">
+      <div class="modal-icon" aria-hidden="true">⚡</div>
+      <h3 id="modal-heal-title">Bắt đầu hồi sinh video?</h3>
+      <p class="modal-desc">
+        Phát hiện <strong id="modal-pending-count" style="color:var(--accent-amber)">0</strong> video stream bị lỗi cần làm mới. Bạn có muốn chuyển sang TikTok để hệ thống tự động phát và làm mới toàn bộ danh sách này không?
+      </p>
+      <div class="modal-actions">
+        <button class="modal-btn secondary" id="btn-cancel-heal">Để sau</button>
+        <button class="modal-btn primary" id="btn-confirm-heal-tiktok">Chuyển qua TikTok ngay</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER NETWORK ALERT OVERLAY -->
+  <div class="network-overlay" id="network-overlay" hidden>
+    <div class="network-card" id="network-card" role="alert" aria-live="assertive">
+      <div class="network-icon-wrapper" id="network-icon-wrapper">
+        <div class="network-pulse-ring"></div>
+        <div class="network-icon" id="network-icon">📡</div>
+      </div>
+      <h2 id="network-title">Mất kết nối Internet</h2>
+      <p id="network-desc">Trình phát đã tạm dừng để bảo vệ danh sách phát. Sẽ tự động tiếp tục phát ngay khi có mạng trở lại...</p>
+      <div class="network-status-badge" id="network-badge">
+        <span class="network-dot"></span>
+        <span id="network-badge-text">Đang chờ kết nối lại...</span>
+      </div>
+    </div>
+  </div>
+
   <script src="js/player/player-cdn-refresh.js"></script>
+  <script src="js/player/player-audio-dsp.js"></script>
   <script src="js/player/player-audio.js"></script>
+  <script src="js/player/player-state.js"></script>
+  <script src="js/player/player-ui.js"></script>
   <script src="js/player/player-app.js"></script>
 </body>
 

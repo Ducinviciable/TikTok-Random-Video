@@ -10,7 +10,7 @@ Nếu một hành vi không thấy được trong code, tài liệu sẽ ghi rõ
 
 ### 1.1 Scroll count được tính ở đâu?
 
-Scroll count được theo dõi trong `js/content-core.js` داخل hàm `autoScroll(...)`.
+Scroll count được theo dõi trong `js/content-core.js` trong hàm `autoScroll(...)`.
 
 Các biến liên quan:
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TikTok Random Liked",
-  "version": "3.5.3",
+  "version": "3.5.4",
   "description": "Random xem video đã Like trên TikTok",
   "permissions": [
     "activeTab",
@@ -53,10 +53,14 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "background.png",
         "player.html",
         "style-player.css",
         "js/player/player-cdn-refresh.js",
+        "js/player/player-audio-dsp.js",
         "js/player/player-audio.js",
+        "js/player/player-state.js",
+        "js/player/player-ui.js",
         "js/player/player-app.js"
       ],
       "matches": [

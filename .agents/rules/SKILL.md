@@ -180,3 +180,18 @@ const thumb = typeof item === "string" ? "" : (item.thumb || "");
 ```
 
 The `getUrl()` helper in `background.js` handles this normalization.
+
+---
+
+## Dedicated Player (`player-app.js`, `player-audio.js`) — Pitfalls to Avoid
+
+### 1. Global Window Exports Synchronization (Critical)
+In `player-app.js`, UI functions exposed to `window` via `Object.assign(window, { ... })` must be **strictly defined in scope**.
+* **The Fatal Bug**: When renaming or removing a function (e.g. replacing `toggleNormalizer` with `setSoundMode`), forgetting to update `Object.assign(window, { ... })` causes an uncaught **`ReferenceError: <function> is not defined`** at initial script evaluation.
+* **The Impact**: The uncaught error halts the entire script before initialization functions (`buildEqSliders()`, `tryLoadFromStorage()`, `initUIEventListeners()`) can execute. Result: playlist appears empty (0 videos), 10-band EQ sliders disappear, and all UI controls freeze.
+* **The Rule**: Always verify that every identifier inside `Object.assign(window, { ... })` exists and matches the renamed/updated functions.
+
+### 2. CSP Compliance on Extension Pages
+* **NEVER** use inline event handlers (e.g. `onerror="..."`, `onclick="..."`) in `player.html`.
+* Always attach event listeners dynamically in JS via `addEventListener`.
+

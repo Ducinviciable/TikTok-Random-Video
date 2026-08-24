@@ -1,15 +1,6 @@
 'use strict';
 
 (function () {
-  const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-  const EQ_PRESETS = {
-    'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    'Bass Boost': [9, 7, 5, 3, 2, 1, 0, 0, -1, -2],
-    'Vocal': [-2, -1, 0, 2, 4, 5, 4, 3, 1, 0],
-    'Electronic': [4, 3, 2, 0, -1, 2, 4, 5, 3, 2],
-    'Lofi': [2, 2, 1, 0, -1, -1, -2, -2, -1, 0],
-  };
-
   let audioCtx = null;
   let isInitialized = false;
 
@@ -19,16 +10,7 @@
   let sourceB = null;
   let gainA = null;
   let gainB = null;
-
   let preMixGain = null;
-  let eqFilters = [];
-  let bassBoostNode = null;
-  let compressorNode = null;
-  let compressorGain = null;
-  let bypassGain = null;
-  let postDSPCrossover = null;
-  let masterGainNode = null;
-  let analyserNode = null;
 
   let activeChannel = 'A';
   let activeTrack = null;
@@ -36,15 +18,18 @@
   let preloadedUrl = null;
 
   let crossfadeDuration = 2.5;
-  let bassBoostGain = 6;
-  let normalizerEnabled = true;
-  let masterVolume = 0.72;
-  let volumeBooster = 1.0;
-  let isMuted = false;
+  let isLoopEnabled = false;
 
   let preloadTriggered = false;
   let isCrossfading = false;
   let crossfadeTimer = null;
+  let crossfadeInitiated = false;
+  let pendingPreload = null;
+
+  let isUserPaused = false;
+  let watchdogInterval = null;
+  let lastCurrentTime = -1;
+  let stuckSeconds = 0;
 
   const listeners = {
     timeupdate: [],
@@ -89,6 +74,8 @@
       playerB.muted = false;
       playerA.volume = 1.0;
       playerB.volume = 1.0;
+      playerA.loop = isLoopEnabled;
+      playerB.loop = isLoopEnabled;
 
       sourceA = audioCtx.createMediaElementSource(playerA);
       sourceB = audioCtx.createMediaElementSource(playerB);
@@ -106,66 +93,9 @@
       gainA.connect(preMixGain);
       gainB.connect(preMixGain);
 
-      eqFilters = EQ_FREQUENCIES.map((freq, idx) => {
-        const filter = audioCtx.createBiquadFilter();
-        if (idx === 0) {
-          filter.type = 'lowshelf';
-        } else if (idx === EQ_FREQUENCIES.length - 1) {
-          filter.type = 'highshelf';
-        } else {
-          filter.type = 'peaking';
-          filter.Q.value = 1.4;
-        }
-        filter.frequency.value = freq;
-        filter.gain.value = EQ_PRESETS['Bass Boost'][idx] || 0;
-        return filter;
-      });
-
-      let lastNode = preMixGain;
-      eqFilters.forEach(filter => {
-        lastNode.connect(filter);
-        lastNode = filter;
-      });
-
-      bassBoostNode = audioCtx.createBiquadFilter();
-      bassBoostNode.type = 'lowshelf';
-      bassBoostNode.frequency.value = 100;
-      bassBoostNode.gain.value = bassBoostGain;
-      lastNode.connect(bassBoostNode);
-
-      compressorNode = audioCtx.createDynamicsCompressor();
-      compressorNode.threshold.value = -24;
-      compressorNode.knee.value = 30;
-      compressorNode.ratio.value = 4;
-      compressorNode.attack.value = 0.003;
-      compressorNode.release.value = 0.25;
-
-      compressorGain = audioCtx.createGain();
-      bypassGain = audioCtx.createGain();
-      postDSPCrossover = audioCtx.createGain();
-
-      compressorGain.gain.value = normalizerEnabled ? 1.0 : 0.0;
-      bypassGain.gain.value = normalizerEnabled ? 0.0 : 1.0;
-
-      bassBoostNode.connect(compressorNode);
-      compressorNode.connect(compressorGain);
-      compressorGain.connect(postDSPCrossover);
-
-      bassBoostNode.connect(bypassGain);
-      bypassGain.connect(postDSPCrossover);
-
-      masterGainNode = audioCtx.createGain();
-      masterGainNode.gain.value = masterVolume * volumeBooster;
-      postDSPCrossover.connect(masterGainNode);
-
-      analyserNode = audioCtx.createAnalyser();
-      analyserNode.fftSize = 128;
-      analyserNode.smoothingTimeConstant = 0.8;
-      analyserNode.minDecibels = -90;
-      analyserNode.maxDecibels = -10;
-
-      masterGainNode.connect(analyserNode);
-      analyserNode.connect(audioCtx.destination);
+      if (window.PlayerAudioDSP && typeof window.PlayerAudioDSP.buildDspChain === 'function') {
+        window.PlayerAudioDSP.buildDspChain(audioCtx, preMixGain);
+      }
 
       _attachPlayerListeners(playerA, 'A');
       _attachPlayerListeners(playerB, 'B');
@@ -177,11 +107,6 @@
       console.error('[AUDIO] Init failed:', err);
     }
   }
-
-  let isUserPaused = false;
-  let watchdogInterval = null;
-  let lastCurrentTime = -1;
-  let stuckSeconds = 0;
 
   function _startWatchdog() {
     if (watchdogInterval) clearInterval(watchdogInterval);
@@ -208,12 +133,14 @@
           if (stuckSeconds === 4) {
             try { player.play().catch(() => {}); } catch (_) {}
           } else if (stuckSeconds >= 12) {
-            console.warn('[AUDIO] ⚠️ Track metadata load timeout > 12s → skipping');
+            const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+            console.warn('[AUDIO] ⚠️ Track metadata load timeout > 12s → ' + (isOffline ? 'network offline' : 'skipping'));
             stuckSeconds = 0;
             emit('error', {
               channel: activeChannel,
-              error: new Error('Track metadata load timeout (12s)'),
+              error: new Error(isOffline ? 'Network disconnected (load timeout)' : 'Track metadata load timeout (12s)'),
               track: activeTrack,
+              isNetworkError: isOffline,
             });
             return;
           }
@@ -227,8 +154,13 @@
       if (dur > 0 && cur >= dur - 0.3 && !isCrossfading) {
         stuckSeconds++;
         if (stuckSeconds >= 3) {
-          console.warn('[AUDIO] End-of-track reached without transition → forcing transition');
           stuckSeconds = 0;
+          if (isLoopEnabled) {
+            console.warn('[AUDIO] End-of-track reached with loop enabled → replaying');
+            replay();
+            return;
+          }
+          console.warn('[AUDIO] End-of-track reached without transition → forcing transition');
           if (preloadedUrl) {
             performCrossfade();
           } else {
@@ -248,12 +180,14 @@
         if (stuckSeconds === 4 || stuckSeconds === 8) {
           try { player.play().catch(() => {}); } catch (_) {}
         } else if (stuckSeconds >= 12) {
-          console.warn('[AUDIO] ⚠️ Playback stuck > 12s → emitting error for auto-skip');
+          const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+          console.warn('[AUDIO] ⚠️ Playback stuck > 12s → ' + (isOffline ? 'network offline' : 'emitting error for auto-skip'));
           stuckSeconds = 0;
           emit('error', {
             channel: activeChannel,
-            error: new Error('Playback stalled timeout (12s)'),
+            error: new Error(isOffline ? 'Network disconnected (playback stalled)' : 'Playback stalled timeout (12s)'),
             track: activeTrack,
+            isNetworkError: isOffline,
           });
           return;
         }
@@ -262,6 +196,22 @@
       }
       lastCurrentTime = cur;
     }, 1000);
+  }
+
+  function _createEqualPowerCurves(numSteps = 64) {
+    const fadeIn = new Float32Array(numSteps);
+    const fadeOut = new Float32Array(numSteps);
+    for (let i = 0; i < numSteps; i++) {
+      const t = i / (numSteps - 1);
+      fadeIn[i] = Math.sin(t * (Math.PI / 2));
+      fadeOut[i] = Math.cos(t * (Math.PI / 2));
+    }
+    return { fadeIn, fadeOut };
+  }
+
+  function getEffectiveCrossfade(dur) {
+    if (crossfadeDuration <= 0 || !dur || !isFinite(dur) || dur < 3.0) return 0;
+    return Math.min(crossfadeDuration, Math.min(dur * 0.15, 5.0));
   }
 
   function _attachPlayerListeners(player, channelName) {
@@ -279,49 +229,88 @@
         track: activeTrack,
       });
 
-      if (dur >= 15 && !preloadTriggered) {
-        const effectiveCrossfade = Math.min(crossfadeDuration, dur * 0.12);
+      if (!isLoopEnabled && !preloadTriggered && dur > 3.0 && isFinite(dur)) {
         const remaining = dur - cur;
-        if (pct >= 85 || remaining <= (effectiveCrossfade + 3)) {
+        if (pct >= 50 && (pct >= 70 || remaining <= 10.0)) {
           preloadTriggered = true;
           emit('preloadNeeded', { currentTrack: activeTrack });
         }
-      } else if (dur > 0 && dur < 15 && !preloadTriggered && pct >= 80) {
-        preloadTriggered = true;
-        emit('preloadNeeded', { currentTrack: activeTrack });
       }
 
-      if (!isCrossfading && preloadedUrl && dur >= 15 && crossfadeDuration > 0) {
-        const effectiveCrossfade = Math.min(crossfadeDuration, dur * 0.12);
-        if ((dur - cur) <= effectiveCrossfade) {
-          performCrossfade();
+      if (!isLoopEnabled && !isCrossfading && !crossfadeInitiated && preloadedUrl && dur > 3.0 && isFinite(dur) && crossfadeDuration > 0) {
+        const effectiveCrossfade = getEffectiveCrossfade(dur);
+        const remaining = dur - cur;
+        if (pct >= 65 && effectiveCrossfade > 0 && remaining <= effectiveCrossfade) {
+          crossfadeInitiated = true;
+          performCrossfade(effectiveCrossfade);
         }
       }
     });
 
     player.addEventListener('ended', () => {
       if (channelName === activeChannel && !isCrossfading) {
-        if (preloadedUrl) {
-          performCrossfade();
-        } else {
+        if (isLoopEnabled) {
+          replay();
+          return;
+        }
+        if (preloadedUrl && !crossfadeInitiated && crossfadeDuration > 0) {
+          crossfadeInitiated = true;
+          performCrossfade(Math.min(crossfadeDuration, 1.2));
+        } else if (!crossfadeInitiated) {
           emit('ended', { channel: channelName, track: activeTrack });
         }
       }
     });
 
-    player.addEventListener('error', () => {
+    player.addEventListener('error', async () => {
       const err = player.error;
-      if (!player.src || player.src === '' || (err && err.code === 1)) {
+      const fullSrc = player.currentSrc || player.src || '';
+      if (!fullSrc || (err && err.code === 1)) {
         return;
       }
 
-      console.error('[AUDIO] Player Error:', {
+      const errorCodeNames = {
+        1: 'MEDIA_ERR_ABORTED',
+        2: 'MEDIA_ERR_NETWORK',
+        3: 'MEDIA_ERR_DECODE',
+        4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
+      };
+
+      const errorPayload = {
         code: err ? err.code : 'UNKNOWN',
+        codeName: err ? (errorCodeNames[err.code] || 'UNKNOWN') : 'UNKNOWN',
         message: err ? err.message : '',
         channel: channelName,
-        src: player.src ? player.src.substring(0, 100) + '...' : 'NONE',
+        fullSrc: fullSrc,
         track: activeTrack ? activeTrack.username : null,
-      });
+        httpStatus: null,
+      };
+
+      let isNetworkErr = false;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        isNetworkErr = true;
+      } else if (err && err.code === 2) {
+        isNetworkErr = true;
+      } else if (fullSrc.startsWith('http://') || fullSrc.startsWith('https://')) {
+        try {
+          const probe = await fetch(fullSrc, { method: 'HEAD', cache: 'no-store' }).catch(() => null);
+          if (probe) {
+            errorPayload.httpStatus = probe.status;
+            errorPayload.httpStatusText = probe.statusText;
+            if (probe.status >= 500) {
+              isNetworkErr = true;
+            }
+          } else {
+            isNetworkErr = true;
+          }
+        } catch (_) {
+          isNetworkErr = true;
+        }
+      } else {
+        isNetworkErr = typeof navigator !== 'undefined' && !navigator.onLine;
+      }
+
+      console.error('[AUDIO] ❌ Media Playback Error:', errorPayload);
 
       if (channelName !== activeChannel) {
         preloadedUrl = null;
@@ -331,7 +320,14 @@
           console.warn('[AUDIO] Ignored transient error during active playback');
           return;
         }
-        emit('error', { channel: channelName, error: player.error, track: activeTrack });
+        emit('error', {
+          channel: channelName,
+          error: player.error,
+          track: activeTrack,
+          fullSrc,
+          errorPayload,
+          isNetworkError: isNetworkErr,
+        });
       }
     });
 
@@ -342,6 +338,24 @@
     player.addEventListener('pause', () => {
       if (channelName === activeChannel && !isCrossfading) emit('pause', { track: activeTrack });
     });
+  }
+
+  function stopAll() {
+    if (crossfadeTimer) {
+      clearTimeout(crossfadeTimer);
+      crossfadeTimer = null;
+    }
+    isCrossfading = false;
+    crossfadeInitiated = false;
+    for (const [player, gain] of [[playerA, gainA], [playerB, gainB]]) {
+      if (!player) continue;
+      try {
+        gain.gain.cancelScheduledValues(audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+        player.pause();
+        player.currentTime = 0;
+      } catch (_) {}
+    }
   }
 
   async function playTrack(cdnUrl, track) {
@@ -357,52 +371,100 @@
     }
 
     if (preloadedTrack && preloadedTrack.id === track.id && preloadedUrl) {
-      await performCrossfade();
-      return true;
+      crossfadeInitiated = true;
+      const ok = await performCrossfade();
+      if (ok) return true;
     }
+
+    const isCurrentlyPlaying = isPlaying();
+    const targetChannel = isCurrentlyPlaying ? (activeChannel === 'A' ? 'B' : 'A') : activeChannel;
+    const targetPlayer = targetChannel === 'A' ? playerA : playerB;
+    const targetGain = targetChannel === 'A' ? gainA : gainB;
+    const fadeOutPlayer = targetChannel === 'A' ? playerB : playerA;
+    const fadeOutGain = targetChannel === 'A' ? gainB : gainA;
 
     isUserPaused = false;
     lastCurrentTime = -1;
     stuckSeconds = 0;
     preloadTriggered = false;
-    activeTrack = track;
-
-    const targetPlayer = activeChannel === 'A' ? playerA : playerB;
-    const targetGain = activeChannel === 'A' ? gainA : gainB;
-    const idlePlayer = activeChannel === 'A' ? playerB : playerA;
-    const idleGain = activeChannel === 'A' ? gainB : gainA;
-
-    try {
-      idlePlayer.pause();
-      idlePlayer.currentTime = 0;
-      idleGain.gain.cancelScheduledValues(audioCtx.currentTime);
-      idleGain.gain.setValueAtTime(0, audioCtx.currentTime);
-    } catch (_) { }
-
+    crossfadeInitiated = false;
     preloadedTrack = null;
     preloadedUrl = null;
+    pendingPreload = null;
 
     targetPlayer.src = cdnUrl;
-    targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
-    targetGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+    targetPlayer.loop = isLoopEnabled;
 
-    try {
-      console.log('[AUDIO] Attempting play on channel', activeChannel, 'URL:', cdnUrl.substring(0, 100));
-      await targetPlayer.play();
-      console.log('[AUDIO] Play successful on channel', activeChannel);
-      emit('trackChanged', { track, channel: activeChannel });
-      return true;
-    } catch (err) {
-      console.error('[AUDIO] play() call rejected:', err);
-      emit('error', { channel: activeChannel, error: err, track });
-      return false;
+    if (isCurrentlyPlaying && crossfadeDuration > 0) {
+      const quickFadeDur = 0.35;
+      targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      targetGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+
+      try {
+        await targetPlayer.play();
+        const now = audioCtx.currentTime;
+        const { fadeIn, fadeOut } = _createEqualPowerCurves(32);
+
+        targetGain.gain.cancelScheduledValues(now);
+        targetGain.gain.setValueCurveAtTime(fadeIn, now, quickFadeDur);
+
+        fadeOutGain.gain.cancelScheduledValues(now);
+        fadeOutGain.gain.setValueCurveAtTime(fadeOut, now, quickFadeDur);
+
+        activeChannel = targetChannel;
+        activeTrack = track;
+        emit('trackChanged', { track, channel: activeChannel });
+
+        setTimeout(() => {
+          try {
+            fadeOutPlayer.pause();
+            fadeOutPlayer.currentTime = 0;
+            fadeOutGain.gain.cancelScheduledValues(audioCtx.currentTime);
+            fadeOutGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+          } catch (_) {}
+          targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          targetGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+        }, Math.round(quickFadeDur * 1000) + 40);
+
+        return true;
+      } catch (err) {
+        const isNetErr = typeof navigator !== 'undefined' && !navigator.onLine;
+        console.error('[AUDIO] play() call rejected:', err);
+        emit('error', { channel: targetChannel, error: err, track, isNetworkError: isNetErr });
+        return false;
+      }
+    } else {
+      for (const [p, g] of [[playerA, gainA], [playerB, gainB]]) {
+        if (!p) continue;
+        try {
+          g.gain.cancelScheduledValues(audioCtx.currentTime);
+          g.gain.setValueAtTime(0.0, audioCtx.currentTime);
+          p.pause();
+          p.currentTime = 0;
+        } catch (_) {}
+      }
+
+      targetGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      targetGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+      activeChannel = targetChannel;
+      activeTrack = track;
+
+      try {
+        console.log('[AUDIO] Attempting play on channel', activeChannel, 'URL:', cdnUrl.substring(0, 100));
+        await targetPlayer.play();
+        console.log('[AUDIO] Play successful on channel', activeChannel);
+        emit('trackChanged', { track, channel: activeChannel });
+        return true;
+      } catch (err) {
+        const isNetErr = typeof navigator !== 'undefined' && !navigator.onLine;
+        console.error('[AUDIO] play() call rejected:', err);
+        emit('error', { channel: activeChannel, error: err, track, isNetworkError: isNetErr });
+        return false;
+      }
     }
   }
 
-  function preloadTrack(cdnUrl, track) {
-    initAudioContext();
-    if (!cdnUrl || !track) return;
-
+  function _applyPreload(cdnUrl, track) {
     const idlePlayer = activeChannel === 'A' ? playerB : playerA;
     const idleGain = activeChannel === 'A' ? gainB : gainA;
 
@@ -415,8 +477,21 @@
     idleGain.gain.setValueAtTime(0, audioCtx.currentTime);
   }
 
-  async function performCrossfade() {
-    if (isCrossfading || !preloadedUrl) return;
+  function preloadTrack(cdnUrl, track) {
+    if (isLoopEnabled) return;
+    initAudioContext();
+    if (!cdnUrl || !track) return;
+
+    if (isCrossfading) {
+      pendingPreload = { cdnUrl, track };
+      return;
+    }
+
+    _applyPreload(cdnUrl, track);
+  }
+
+  async function performCrossfade(customDuration = null) {
+    if (isCrossfading || !preloadedUrl) return false;
     isCrossfading = true;
 
     initAudioContext();
@@ -431,31 +506,36 @@
     const newChannel = activeChannel === 'A' ? 'B' : 'A';
     const newTrack = preloadedTrack;
 
-    const now = audioCtx.currentTime;
-    const duration = Math.max(0.1, crossfadeDuration);
+    const duration = customDuration != null ? Math.max(0.1, customDuration) : Math.max(0.1, crossfadeDuration);
 
-    fadeInGain.gain.cancelScheduledValues(now);
-    fadeInGain.gain.setValueAtTime(0.001, now);
-    fadeInGain.gain.linearRampToValueAtTime(1.0, now + duration);
+    fadeInGain.gain.cancelScheduledValues(audioCtx.currentTime);
+    fadeInGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
 
     try {
       await fadeInPlayer.play();
     } catch (err) {
       console.warn('[AUDIO] fadeInPlayer play error:', err);
       isCrossfading = false;
+      crossfadeInitiated = false;
       preloadedUrl = null;
       preloadedTrack = null;
       emit('error', { channel: newChannel, error: err, track: newTrack });
-      return;
+      return false;
     }
 
+    const now = audioCtx.currentTime;
+    const { fadeIn, fadeOut } = _createEqualPowerCurves(64);
+
+    fadeInGain.gain.cancelScheduledValues(now);
+    fadeInGain.gain.setValueCurveAtTime(fadeIn, now, duration);
+
     fadeOutGain.gain.cancelScheduledValues(now);
-    fadeOutGain.gain.setValueAtTime(fadeOutGain.gain.value, now);
-    fadeOutGain.gain.linearRampToValueAtTime(0.001, now + duration);
+    fadeOutGain.gain.setValueCurveAtTime(fadeOut, now, duration);
 
     activeChannel = newChannel;
     activeTrack = newTrack;
     preloadTriggered = false;
+    crossfadeInitiated = false;
     preloadedTrack = null;
     preloadedUrl = null;
     lastCurrentTime = -1;
@@ -463,21 +543,54 @@
 
     emit('trackChanged', { track: newTrack, channel: newChannel });
 
+    if (crossfadeTimer) clearTimeout(crossfadeTimer);
     crossfadeTimer = setTimeout(() => {
       try {
         fadeOutPlayer.pause();
         fadeOutPlayer.currentTime = 0;
-        fadeOutGain.gain.setValueAtTime(0, audioCtx.currentTime);
-      } catch (_) { }
+        fadeOutGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        fadeOutGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+      } catch (_) {}
+      fadeInGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      fadeInGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
       isCrossfading = false;
       crossfadeTimer = null;
-    }, duration * 1000 + 100);
+
+      if (pendingPreload) {
+        const p = pendingPreload;
+        pendingPreload = null;
+        _applyPreload(p.cdnUrl, p.track);
+      }
+    }, Math.round(duration * 1000) + 60);
+
+    return true;
   }
 
   function pause() {
     isUserPaused = true;
     const player = activeChannel === 'A' ? playerA : playerB;
     if (player) player.pause();
+  }
+
+  function replay() {
+    if (!isInitialized || !activeTrack) return false;
+    const player = activeChannel === 'A' ? playerA : playerB;
+    const gain = activeChannel === 'A' ? gainA : gainB;
+    if (!player || !player.src) return false;
+    try {
+      player.currentTime = 0;
+      preloadTriggered = false;
+      crossfadeInitiated = false;
+      lastCurrentTime = -1;
+      stuckSeconds = 0;
+      gain.gain.cancelScheduledValues(audioCtx.currentTime);
+      gain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+      player.play().catch(() => {});
+      emit('trackChanged', { track: activeTrack, channel: activeChannel });
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   async function resume() {
@@ -512,67 +625,30 @@
     }
   }
 
-  function setVolume(pct) {
-    masterVolume = Math.max(0, Math.min(100, Number(pct))) / 100;
-    if (masterGainNode && audioCtx) {
-      const finalGain = isMuted ? 0 : masterVolume * volumeBooster;
-      masterGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      masterGainNode.gain.setValueAtTime(finalGain, audioCtx.currentTime);
+  function setLoop(enabled) {
+    isLoopEnabled = Boolean(enabled);
+    if (playerA) playerA.loop = isLoopEnabled;
+    if (playerB) playerB.loop = isLoopEnabled;
+    if (isLoopEnabled) {
+      preloadedUrl = null;
+      preloadedTrack = null;
+      pendingPreload = null;
+      preloadTriggered = false;
+      crossfadeInitiated = false;
     }
   }
 
-  function setVolumeBooster(multiplier) {
-    volumeBooster = Math.max(1.0, Math.min(3.0, Number(multiplier)));
-    setVolume(masterVolume * 100);
-  }
-
-  function toggleMute() {
-    isMuted = !isMuted;
-    setVolume(masterVolume * 100);
-    return isMuted;
-  }
-
-  function setBassBoost(gainDb) {
-    bassBoostGain = Number(gainDb);
-    if (bassBoostNode && audioCtx) {
-      bassBoostNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      bassBoostNode.gain.setValueAtTime(bassBoostGain, audioCtx.currentTime);
-    }
-  }
-
-  function setNormalizer(enabled) {
-    normalizerEnabled = Boolean(enabled);
-    if (compressorGain && bypassGain && audioCtx) {
-      compressorGain.gain.setValueAtTime(normalizerEnabled ? 1.0 : 0.0, audioCtx.currentTime);
-      bypassGain.gain.setValueAtTime(normalizerEnabled ? 0.0 : 1.0, audioCtx.currentTime);
-    }
+  function isLoop() {
+    return isLoopEnabled;
   }
 
   function setCrossfadeDuration(sec) {
     crossfadeDuration = Math.max(0, Math.min(5.0, Number(sec)));
   }
 
-  function setEqBand(bandIdx, gainDb) {
-    if (eqFilters[bandIdx] && audioCtx) {
-      eqFilters[bandIdx].gain.cancelScheduledValues(audioCtx.currentTime);
-      eqFilters[bandIdx].gain.setValueAtTime(Number(gainDb), audioCtx.currentTime);
-    }
-  }
-
-  function setEqPreset(presetName) {
-    const values = EQ_PRESETS[presetName];
-    if (!values) return;
-    values.forEach((gain, idx) => setEqBand(idx, gain));
-  }
-
   function getAudioContext() {
     initAudioContext();
     return audioCtx;
-  }
-
-  function getAnalyserNode() {
-    initAudioContext();
-    return analyserNode;
   }
 
   function getCurrentTime() {
@@ -598,25 +674,56 @@
     return activeTrack;
   }
 
+  function getAudioMetrics() {
+    initAudioContext();
+    if (window.PlayerAudioDSP) {
+      return window.PlayerAudioDSP.getAudioMetrics(
+        activeChannel,
+        activeTrack,
+        isPlaying(),
+        getCurrentTime(),
+        getDuration()
+      );
+    }
+    return {};
+  }
+
+  function logAudioDiagnostics() {
+    if (window.PlayerAudioDSP) {
+      return window.PlayerAudioDSP.logAudioDiagnostics(getAudioMetrics);
+    }
+  }
+
+  window.getAudioDiagnostics = logAudioDiagnostics;
+
   window.PlayerAudio = {
     init: initAudioContext,
     playTrack,
     preloadTrack,
     performCrossfade,
+    stopAll,
+    replay,
     pause,
     resume,
     seek,
     seekPercent,
-    setVolume,
-    setVolumeBooster,
-    toggleMute,
-    setBassBoost,
-    setNormalizer,
+    setVolume: (pct) => window.PlayerAudioDSP && window.PlayerAudioDSP.setVolume(pct),
+    setVolumeBooster: (m) => window.PlayerAudioDSP && window.PlayerAudioDSP.setVolumeBooster(m),
+    getVolumeBooster: () => window.PlayerAudioDSP ? window.PlayerAudioDSP.getVolumeBooster() : 1.0,
+    setPureDirect: (e) => window.PlayerAudioDSP && window.PlayerAudioDSP.setPureDirect(e),
+    isPureDirect: () => window.PlayerAudioDSP ? window.PlayerAudioDSP.isPureDirect() : false,
+    toggleMute: () => window.PlayerAudioDSP ? window.PlayerAudioDSP.toggleMute() : false,
+    setBassBoost: (g) => window.PlayerAudioDSP && window.PlayerAudioDSP.setBassBoost(g),
+    setNormalizer: (e) => window.PlayerAudioDSP && window.PlayerAudioDSP.setNormalizer(e),
+    setLoop,
+    isLoop,
     setCrossfadeDuration,
-    setEqBand,
-    setEqPreset,
+    setEqBand: (i, g) => window.PlayerAudioDSP && window.PlayerAudioDSP.setEqBand(i, g),
+    setEqPreset: (n) => window.PlayerAudioDSP && window.PlayerAudioDSP.setEqPreset(n),
+    getAudioMetrics,
+    logAudioDiagnostics,
     getAudioContext,
-    getAnalyserNode,
+    getAnalyserNode: () => window.PlayerAudioDSP ? window.PlayerAudioDSP.getAnalyserNode() : null,
     getCurrentTime,
     getDuration,
     isPlaying,
@@ -626,7 +733,11 @@
     off: (event, fn) => {
       if (listeners[event]) listeners[event] = listeners[event].filter(cb => cb !== fn);
     },
-    EQ_PRESETS,
-    EQ_FREQUENCIES,
+    get EQ_PRESETS() {
+      return window.PlayerAudioDSP ? window.PlayerAudioDSP.EQ_PRESETS : {};
+    },
+    get EQ_FREQUENCIES() {
+      return window.PlayerAudioDSP ? window.PlayerAudioDSP.EQ_FREQUENCIES : [];
+    },
   };
 })();

@@ -65,6 +65,11 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   }
 
   if (request.action === "navigateToVideo") {
+    var allVidsNav = document.querySelectorAll("video");
+    for (var n = 0; n < allVidsNav.length; n++) {
+      allVidsNav[n].muted = true;
+      try { allVidsNav[n].pause(); } catch (_) {}
+    }
     window.location.href = request.url;
     sendResponse({ success: true });
     return true;
@@ -106,15 +111,14 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 // Auto-init based on current page type
 function autoInit() {
   if (window.location.href.includes("/video/")) {
-    setTimeout(function () {
-      initVideoWatcher();
-    }, 1000);
+    initVideoWatcher();
   }
 }
 
-if (document.readyState === "complete") {
+if (document.readyState === "complete" || document.readyState === "interactive") {
   autoInit();
 } else {
+  window.addEventListener("DOMContentLoaded", autoInit);
   window.addEventListener("load", autoInit);
 }
 
@@ -134,7 +138,7 @@ const urlObserver = new MutationObserver(function () {
     if (lastUrl.includes("/video/")) {
       setTimeout(function () {
         initVideoWatcher();
-      }, 800);
+      }, 300);
     }
   }
 });

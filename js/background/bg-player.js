@@ -28,9 +28,9 @@ function handleRefreshCdnUrl(request, sender, sendResponse) {
     const list = _inflightRefreshes.get(canonicalUrl) || [];
     _inflightRefreshes.delete(canonicalUrl);
     list.forEach(cb => {
-      try { cb({ ok: false, error: 'Stream fetch timed out after 12s' }); } catch (_) {}
+      try { cb({ ok: false, error: 'Stream fetch timed out after 18s' }); } catch (_) {}
     });
-  }, 12000);
+  }, 18000);
 
   (async () => {
     try {
@@ -61,6 +61,10 @@ async function _applyPlayerCorsRule() {
         priority: 1,
         action: {
           type: 'modifyHeaders',
+          requestHeaders: [
+            { header: 'Referer', operation: 'set', value: 'https://www.tiktok.com/' },
+            { header: 'Origin', operation: 'set', value: 'https://www.tiktok.com' },
+          ],
           responseHeaders: [
             { header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' },
             { header: 'Access-Control-Allow-Methods', operation: 'set', value: 'GET, HEAD, OPTIONS' },

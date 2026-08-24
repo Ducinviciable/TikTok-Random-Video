@@ -3,84 +3,70 @@
 const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 const DNR_RULE_ID = 99001;
 
+let _lastTikwmRequestTime = 0;
+const TIKWM_MIN_INTERVAL_MS = 1200;
+let _tikwmQueue = Promise.resolve();
+
+async function _throttledFetchTikwm(canonicalUrl, signal) {
+  return new Promise((resolve) => {
+    _tikwmQueue = _tikwmQueue.then(async () => {
+      if (signal && signal.aborted) {
+        resolve(null);
+        return;
+      }
+      const now = Date.now();
+      const elapsed = now - _lastTikwmRequestTime;
+      if (elapsed < TIKWM_MIN_INTERVAL_MS) {
+        await new Promise((r) => setTimeout(r, TIKWM_MIN_INTERVAL_MS - elapsed));
+      }
+      _lastTikwmRequestTime = Date.now();
+      try {
+        const result = await _fetchTikwmStream(canonicalUrl, signal);
+        resolve(result);
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  });
+}
+
 async function _fetchTikwmStream(canonicalUrl, signal) {
-  try {
-    const body = new URLSearchParams({ url: canonicalUrl, hd: '1' });
-    const res = await fetch('https://tikwm.com/api/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-      signal,
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (json.code !== 0 || !json.data) return null;
-    const cdnUrl = json.data.play || json.data.hdplay || (typeof json.data.music === 'string' ? json.data.music : null);
-    if (!cdnUrl) return null;
-    return { ok: true, cdnUrl, title: json.data.title, cover: json.data.cover, source: 'tikwm' };
-  } catch (_) {
-    return null;
-  }
-}
-
-async function _fetchCobaltStream(canonicalUrl, signal) {
-  try {
-    const res = await fetch('https://api.cobalt.tools/api/json', {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: canonicalUrl,
-        vQuality: '720',
-      }),
-      signal,
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const cdnUrl = json.url || (json.audio ? json.audio : null);
-    if (!cdnUrl) return null;
-    return { ok: true, cdnUrl, source: 'cobalt' };
-  } catch (_) {
-    return null;
-  }
-}
-
-async function _fetchTikSaveStream(canonicalUrl, signal) {
-  try {
-    const res = await fetch(`https://api.vkrdown.com/api/index.php?url=${encodeURIComponent(canonicalUrl)}`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal,
-    });
-    if (res.ok) {
+  const endpoints = ['https://tikwm.com/api/', 'https://www.tikwm.com/api/'];
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1400));
+    }
+    const endpoint = endpoints[attempt % endpoints.length];
+    try {
+      const body = new URLSearchParams({ url: canonicalUrl, hd: '1' });
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+        signal,
+      });
+      if (!res.ok) {
+        if (res.status === 429) continue;
+        return null;
+      }
       const json = await res.json();
-      if (json && json.data) {
-        const cdnUrl = json.data.downloadUrl || json.data.video || json.data.audio || json.data.play;
-        if (cdnUrl) {
-          return { ok: true, cdnUrl, source: 'tiksave' };
-        }
+      if (json.code === -1 && json.msg && json.msg.includes('Limit')) {
+        continue;
       }
+      if (json.code !== 0 || !json.data) return null;
+      const cdnUrl = json.data.play || json.data.hdplay || (typeof json.data.music === 'string' ? json.data.music : null);
+      if (!cdnUrl) return null;
+      return {
+        ok: true,
+        cdnUrl,
+        title: json.data.title,
+        cover: json.data.cover,
+        source: 'tikwm',
+      };
+    } catch (e) {
+      if (e.name === 'AbortError') return null;
     }
-  } catch (_) {}
-
-  try {
-    const res2 = await fetch('https://api.tiksave.io/api/v1/info', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ url: canonicalUrl }),
-      signal,
-    });
-    if (res2.ok) {
-      const json2 = await res2.json();
-      const cdnUrl2 = json2 && json2.data && (json2.data.play || json2.data.video || json2.data.url);
-      if (cdnUrl2) {
-        return { ok: true, cdnUrl: cdnUrl2, source: 'tiksave' };
-      }
-    }
-  } catch (_) {}
-
+  }
   return null;
 }
 
@@ -121,12 +107,12 @@ async function _removeMobileUaRule() {
 }
 
 async function _doSilentFetch(canonicalUrl, videoId, signal) {
-  const maxRetries = 2;
+  const maxRetries = 1;
   let lastError = '';
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
-      const delay = 4000 + Math.random() * 2000;
+      const delay = 1500 + Math.random() * 1000;
       await new Promise(r => setTimeout(r, delay));
     }
 
@@ -147,7 +133,7 @@ async function _doSilentFetch(canonicalUrl, videoId, signal) {
 
       if (response.status === 403) {
         lastError = 'HTTP 403 Forbidden (rate-limited)';
-        continue;
+        break;
       }
 
       if (!response.ok) {
@@ -158,17 +144,18 @@ async function _doSilentFetch(canonicalUrl, videoId, signal) {
       const cdnUrl = _extractCdnFromHtml(html, videoId);
 
       if (cdnUrl) {
-        return { ok: true, cdnUrl };
+        return { ok: true, cdnUrl, source: 'tiktok-direct' };
       }
 
       return { ok: false, error: 'Could not extract CDN stream URL from TikTok HTML' };
     } catch (err) {
       await _removeMobileUaRule();
-      throw err;
+      if (err.name === 'AbortError') throw err;
+      lastError = err.message;
     }
   }
 
-  return { ok: false, error: lastError || 'All retries exhausted' };
+  return { ok: false, error: lastError || 'Silent fetch failed' };
 }
 
 function _extractCdnFromHtml(html, videoId) {
@@ -250,19 +237,9 @@ function _extractCdnFromHtml(html, videoId) {
 }
 
 async function resolveStreamUrl(canonicalUrl, videoId, signal) {
-  const tikwmResult = await _fetchTikwmStream(canonicalUrl, signal);
+  const tikwmResult = await _throttledFetchTikwm(canonicalUrl, signal);
   if (tikwmResult && tikwmResult.ok && tikwmResult.cdnUrl) {
     return tikwmResult;
-  }
-
-  const cobaltResult = await _fetchCobaltStream(canonicalUrl, signal);
-  if (cobaltResult && cobaltResult.ok && cobaltResult.cdnUrl) {
-    return cobaltResult;
-  }
-
-  const tiksaveResult = await _fetchTikSaveStream(canonicalUrl, signal);
-  if (tiksaveResult && tiksaveResult.ok && tiksaveResult.cdnUrl) {
-    return tiksaveResult;
   }
 
   return await _doSilentFetch(canonicalUrl, videoId, signal);

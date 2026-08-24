@@ -48,3 +48,4 @@ description: Review code changes for bugs, Manifest V3 architecture, anti-bot sa
    - Medium / Low issues.
    - Anti-Bot & Stability assessment.
    - Final recommendation (Ready to merge / Needs revision).
+   - Commit messager to writer

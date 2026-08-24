@@ -154,7 +154,38 @@ Hệ thống bảo vệ của Extension được tổ chức thành 6 lớp (Lay
 
 ---
 
-## 3. Bảng Tổng hợp Tác động & Hành vi Hệ thống
+---
+
+## 3. Cơ chế Bảo vệ & Bypass Dành Riêng cho TikTok Hi-Fi Studio
+
+Bên cạnh 6 tầng bảo vệ cho tab TikTok Web thông thường, trình phát độc lập **TikTok Hi-Fi Studio** ([`player.html`](file:///d:/A.Myself/Random-Video/player.html)) sở hữu kiến trúc phòng thủ mạng chuyên biệt:
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                      HI-FI STUDIO NETWORK ISOLATION & BYPASS                           │
+├──────────────────────────┬─────────────────────────────────────────────────────────────┤
+│ Cơ chế                   │ Nguyên lý & Tác động phòng vệ                               │
+├──────────────────────────┼─────────────────────────────────────────────────────────────┤
+│ 1. Proxy Stream Shield   │ Luồng media qua TikWM/Cobalt/TikSave proxy, ẩn hoàn toàn IP │
+│                          │ và định danh client khỏi máy chủ CDN của ByteDance.         │
+│ 2. Declarative Net Req   │ Rule 99002 tự động chèn Referer & Origin https://tiktok.com │
+│    (DNR Rule 99002)      │ cho các request media trực tiếp từ chrome-extension://.     │
+│ 3. Healing Rate-Limiter  │ Giãn cách tối thiểu 5 phút cho mỗi URL canonical lỗi, triệt│
+│                          │ tiêu nguy cơ spam API làm nghẽn máy chủ.                    │
+│ 4. RAM Caching 20 Min    │ Lưu tạm link CDN trong RAM, tái sử dụng 0ms không gọi mạng. │
+└──────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
+
+1. **Proxy Stream Shield (Cách ly nguồn phát)**: Thay vì kết nối trực tiếp đến các endpoint CDN hạn chế cookie của TikTok, `player.html` định tuyến luồng qua các proxy stream an toàn (`TikWM`, `Cobalt`, `TikSave`). Điều này giúp người dùng nghe nhạc $100\%$ không lo bị dính WAF 403, Captcha hay bị chặn IP.
+2. **DNR Header Injection (Rule 99002)**: Khi buộc phải tải trực tiếp từ TikTok CDN, Background Service Worker kích hoạt bộ quy tắc Declarative Net Request cô lập, tự động bổ sung:
+   - `Referer: https://www.tiktok.com/`
+   - `Origin: https://www.tiktok.com`
+   - Bổ sung `Access-Control-Allow-Origin: *` cho riêng extension tab, cho phép `AudioContext` kết nối DSP mà không vi phạm chính sách bảo mật CORS.
+3. **Healing Queue Rate-Limiter**: Khi gặp bài hát bị lỗi link hoặc hỏng stream, bộ nhớ `recentlyEnqueuedHealing` sẽ chặn không cho bài hát đó gửi lại request hồi sinh trong vòng **5 phút**. Điều này bảo vệ máy chủ giải mã và tránh tạo ra các vòng lặp request bất tận.
+
+---
+
+## 4. Bảng Tổng hợp Tác động & Hành vi Hệ thống
 
 | Tình huống / Sự kiện | Hành vi Xử lý Cụ thể | Thời gian Chờ / Nghỉ | Tác động Điều hướng / Playback |
 | :--- | :--- | :--- | :--- |
@@ -165,12 +196,14 @@ Hệ thống bảo vệ của Extension được tổ chức thành 6 lớp (Lay
 | **Xem nhiều video liên tục** | Sau mỗi 40–70 lượt hành động, kích hoạt Milestone Idle Break. | 8 – 15 giây nghỉ ngơi hoàn toàn | Tạm ngừng cuộn / chuyển video trong 8–15s để mô phỏng người dùng dừng xem. |
 | **Video kém hứng thú (Low Interest)** | Đánh dấu 10% video skip sớm ở mốc 30% – 80% thời lượng. | Không chờ (skip giữa chừng) | Chuyển video sớm tự nhiên như người dùng thật lướt qua video chán. |
 | **Cào dữ liệu danh sách cũ (Catch-Up)** | Bật Fast Catch-Up, giảm delay, bỏ qua thumbnail, đóng băng `noNewCount = 0`. | 300 – 500 ms mỗi lần cuộn | Cuộn siêu tốc qua 1700+ video cũ mà không bị dừng sớm hay tràn RAM. |
+| **Hi-Fi Stream bị lỗi CDN / 403** | Đưa vào Healing Queue, kích hoạt Rate-Limit 5 phút, tự chuyển bài tiếp theo. | Tức thì (cooldown 5 phút/URL) | Không làm đứt mạch nghe nhạc, tự động sửa lỗi ngầm trong background. |
 
 ---
 
-## 4. Nguyên tắc Bất biến & Điều Cấm kỵ (Hard Guardrails)
+## 5. Nguyên tắc Bất biến & Điều Cấm kỵ (Hard Guardrails)
 
 1. **Tuyệt đối KHÔNG xóa Cookie Akamai**: Không bao giờ xóa hoặc can thiệp vào các cookie `_abck`, `bm_sv`, `bm_sz`. Đây là các token định danh phiên của WAF; việc xóa chúng sẽ lập tức kích hoạt mã phản hồi HTTP 403 Access Denied.
 2. **Tuyệt đối KHÔNG Reload cứng trang (`location.reload()` hoặc `chrome.tabs.reload()`)**: Việc tải lại trang toàn bộ sẽ phá hủy phiên làm việc của SPA, làm mất các biến trạng thái và khiến WAF đánh giá lại toàn bộ vân tay trình duyệt.
 3. **Tuyệt đối KHÔNG cướp Focus của người dùng**: Mọi cơ chế xử lý lỗi, phát video nền và phục hồi phải diễn ra hoàn toàn vô hình, không được tự ý kích hoạt tab TikTok lên màn hình làm gián đoạn công việc của người dùng.
 4. **Luôn bảo toàn giới hạn thời gian tối thiểu giữa 2 lần chuyển video**: Giữ khoảng giãn cách tối thiểu $\ge 2.0\text{s}$ để tránh việc nhảy video liên hồi kích hoạt cơ chế chống spam của TikTok.
+5. **Không tự động Blacklist video khi gặp lỗi mạng / 403**: Lỗi 403 chỉ là hạn chế nhất thời của đường truyền hoặc WAF, không phải video bị xóa. Chỉ có người dùng mới có quyền cấm vĩnh viễn video vào Blacklist.
