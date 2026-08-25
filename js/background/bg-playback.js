@@ -23,7 +23,6 @@ async function selectRandomVideo(excludeUrl = "") {
     ? healingQueue.filter((e) => e.status === "pending" && e.retryCount < HEALING_MAX_RETRIES)
     : [];
 
-  // Dedicated Batch Healing Mode: exclusively pick from pending healing queue
   if (isBatchHealing) {
     if (pendingHealingVideos.length > 0) {
       const healEntry = pendingHealingVideos[0];
@@ -50,7 +49,6 @@ async function selectRandomVideo(excludeUrl = "") {
         batchRemaining: pendingHealingVideos.length,
       };
     } else {
-      // Completed all pending videos in batch mode
       await chrome.storage.local.set({ healingModeActive: false });
     }
   }
@@ -127,7 +125,6 @@ async function selectRandomVideo(excludeUrl = "") {
   played.push(selectedCanonical);
   await chrome.storage.local.set({ playedVideos: played });
 
-  // Update retryCount if this was a healing pick
   if (isHealPick && healingQueue.length > 0) {
     const idx = healingQueue.findIndex((e) => isMatchingTikTokVideo(e.url, selectedCanonical));
     if (idx !== -1) {
@@ -385,7 +382,7 @@ async function handlePlayNext(tabId) {
   try {
     const tab = await chrome.tabs.get(tabId);
     currentUrl = tab.url.split("?")[0];
-  } catch (e) {}
+  } catch (e) { }
 
   const result = await selectRandomVideo(currentUrl);
   if (result) {
@@ -414,7 +411,7 @@ async function notifyContentScriptAutoNext(enabled) {
           action: "setAutoNext",
           enabled: enabled,
         })
-        .catch(() => {});
+        .catch(() => { });
     }
-  } catch (e) {}
+  } catch (e) { }
 }

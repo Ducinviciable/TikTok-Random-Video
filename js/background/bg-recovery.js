@@ -20,7 +20,6 @@ function getTieredCooldown(count) {
 
 function resetErrorFreeWindow() {
   if (errorFreeResetTimer) clearTimeout(errorFreeResetTimer);
-  // Reset consecutive counter after 5 minutes of stable error-free playback
   errorFreeResetTimer = setTimeout(() => {
     if (consecutive403Count > 0) {
       console.log(
@@ -164,9 +163,9 @@ async function triggerTiered403Recovery(reason, tabId = null) {
             message:
               "⚠️ Phát hiện chặn WAF liên tục. Đang tạm nghỉ 60s để phục hồi...",
           })
-          .catch(() => {});
+          .catch(() => { });
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // Wait the backoff cooldown before navigating
@@ -201,7 +200,6 @@ function initWatchdogAndTabListeners() {
         tab.url.includes("edge-error"))
     ) {
       if (is403OrErrorTab(tab)) {
-        // 1.8s buffer delay to avoid racing with Content Script's own recovery
         setTimeout(() => {
           triggerTiered403Recovery(`tabs.onUpdated: "${tab.title}"`, tab.id);
         }, 1800);
@@ -227,8 +225,6 @@ function initWatchdogAndTabListeners() {
       if (tab.url.includes("/video/")) {
         const navTime = tabNavTimestamps[tab.id] || 0;
         const elapsed = now - navTime;
-
-        // Ping tab after 4.5s navigation delay
         if (elapsed > 4500) {
           chrome.tabs.sendMessage(tab.id, { action: "ping" }, (response) => {
             if (chrome.runtime.lastError || !response || !response.alive) {
@@ -244,6 +240,6 @@ function initWatchdogAndTabListeners() {
           });
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }, 3000);
 }
