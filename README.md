@@ -1,10 +1,10 @@
-# 🎬 TikTok Random Liked ❤️ (v3.5.1)
+# 🎬 TikTok Random Liked ❤️ (v3.5.4)
 
 Extension Chrome/Edge cao cấp giúp bạn **thưởng thức ngẫu nhiên kho video đã Like trên TikTok** với hai chế độ trải nghiệm: **Tự động chuyển video trên tab TikTok** hoặc **Trình phát độc lập TikTok Hi-Fi Studio**.
 
 <p>
   <img src="https://img.shields.io/badge/Manifest-V3-22c55e?style=for-the-badge&logo=googlechrome" alt="Manifest V3" />
-  <img src="https://img.shields.io/badge/version-v3.5.1-0ea5e9?style=for-the-badge" alt="version v3.5.1" />
+  <img src="https://img.shields.io/badge/version-v3.5.4-0ea5e9?style=for-the-badge" alt="version v3.5.4" />
   <img src="https://img.shields.io/badge/Web%20Audio-Hi--Fi%20DSP-a855f7?style=for-the-badge" alt="Web Audio DSP" />
   <img src="https://img.shields.io/badge/Anti--Bot-WAF%20Safe-f59e0b?style=for-the-badge" alt="Anti-Bot WAF Safe" />
 </p>
@@ -16,32 +16,38 @@ Extension Chrome/Edge cao cấp giúp bạn **thưởng thức ngẫu nhiên kho
 ### 1. 🎧 TikTok Hi-Fi Studio (Trình phát chuyên dụng độc lập)
 * **Phát ngầm không cần mở tab TikTok**: Tiết kiệm 95% CPU/RAM, triệt tiêu 100% nguy cơ gặp WAF 403 & Captcha.
 * **Bộ xử lý âm thanh Web Audio DSP**:
+  * **2 Chế độ phát**: **Hi-Fi DSP** (Đầy đặn, cân bằng qua chuỗi xử lý) và **Pure Direct** (Âm thanh mộc 1:1 nguyên bản).
   * **10-Band Graphic Equalizer**: Tinh chỉnh 10 dải tần từ `32Hz` đến `16kHz` với các preset (*Flat, Bass Boost, Vocal, Electronic, Lofi*).
   * **Deep Bass Booster**: Tăng cường dải trầm LowShelf (100Hz) lên tới `+12dB`.
-  * **Volume Normalizer (DynamicsCompressor)**: Cân bằng tự động sự chênh lệch âm lượng giữa các video.
-  * **Volume Booster 300%**: Khuếch đại tối đa âm lượng cho những video ghi âm quá nhỏ.
-* **Dual-Buffer Crossfade (A/B)**: Tự động nạp trước bài tiếp theo ở 85% thời lượng và chuyển bài mượt mà không khoảng lặng (Fade 2.5s).
-* **Live Visualizer**: Đồ thị sóng âm Spectrum FFT 32 cột và animation Đĩa than Vinyl xoay theo beat.
-* **Kéo thả JSON Backup**: Hỗ trợ trực tiếp file backup JSON v3.1 chứa kho 3.000+ video.
+  * **Volume Normalizer (DynamicsCompressor)**: Tự động bù gain (+3.5dB makeup) và cân bằng mức âm lượng giữa các video.
+  * **Volume Booster 300%**: Khuếch đại tối đa âm lượng lên đến 3.0x (+9.5dB) cho video thu âm quá nhỏ.
+* **Dual-Buffer Crossfade (A/B Seamless Transition)**: Tự động nạp trước bài tiếp theo ở 70% thời lượng, chuyển bài mượt mà không khoảng lặng (Fade 0.0s – 5.0s, mặc định 2.5s) qua đường cong Equal-Power.
+* **Multi-Source Stream Resolver & JIT Caching**: Tự động giải mã stream qua luồng nền an toàn, RAM cache 20 phút, tự động fallback đa nguồn.
+* **Hệ thống Tự Hồi Sinh (Auto-Healing Queue)**: Tự động phát hiện video bị hết hạn CDN hoặc lỗi stream, đưa vào hàng đợi hồi sinh và hỗ trợ Batch Heal hàng loạt qua TikTok Web.
+* **Bảo vệ mất mạng (Network Heartbeat & Auto-Resume)**: Tự động đóng băng luồng khi mất kết nối mạng và tiếp tục phát ngay khi có mạng trở lại.
+* **Live Visualizer**: Đồ thị sóng âm Spectrum FFT mượt mà và animation Đĩa than Vinyl xoay theo nhịp điệu.
+* **Quản lý danh sách & Virtual Scroll**: Hỗ trợ kho 3.000+ video siêu mượt, tìm kiếm tức thì, đánh dấu lưu Offline và kéo thả file backup JSON v3.1.
 
 ### 2. 🎬 TikTok Web Controller (Duyệt trực tiếp trên TikTok)
-* **Auto-Next thông minh**: Tự động chuyển ngẫu nhiên video tiếp theo khi video hiện tại kết thúc qua SPA Navigation.
+* **Auto-Next thông minh**: Tự động chuyển ngẫu nhiên video tiếp theo khi video hiện tại kết thúc qua SPA Navigation (`navigateToVideo`), không reload trang.
 * **Bộ lọc nội dung rác**: Tự động phát hiện và bỏ qua video TikTok Shop/Quảng cáo, video bị gỡ âm thanh hoặc vi phạm bản quyền.
-* **Bảo vệ chống trôi Feed**: Giữ thuộc tính `loop` để ngăn thuật toán TikTok tự nhảy sang luồng video gợi ý.
-* **Phục hồi mềm đa tầng (Phase A–D)**: Tự động xử lý khi gặp popup *"Please Wait"*, video kẹt 6 giây hoặc lỗi 403 mà không cần reload trang.
+* **Bảo vệ chống trôi Feed (Loop Guardian)**: Giữ thuộc tính `loop` để ngăn thuật toán TikTok tự nhảy sang luồng video gợi ý ngoài ý muốn.
+* **Phục hồi mềm đa tầng (Phase A–D)**: Tự động xử lý khi video kẹt 6 giây hoặc cảnh báo 403 mà không làm gián đoạn phiên duyệt.
+* **Bộ bảo vệ Anti-Bot**: Đánh chặn telemetry theo dõi, vô hiệu hoá anti-debugging.
 
 ---
 
 ## ✨ Tính Năng Chính
 
 * 🎲 **Random Video Đã Like** — Chọn ngẫu nhiên không lặp lại video từ kho đã like.
-* 🎧 **TikTok Hi-Fi Studio** — Mở không gian thưởng thức âm nhạc chuyên dụng.
+* 🎧 **TikTok Hi-Fi Studio** — Không gian thưởng thức âm nhạc chuyên dụng, chất lượng cao.
 * ⏭️ **Bỏ qua (Skip)** — Chuyển ngay sang video ngẫu nhiên khác.
 * 🚫 **Xóa vĩnh viễn (Ban/Blacklist)** — Xóa video khỏi danh sách và cấm vĩnh viễn không thu thập lại.
 * ⚡ **Cập nhật video mới (Smart Stop)** — Quét nhanh các video mới thích gần đây và tự dừng khi gặp video cũ.
 * 📜 **Quét tiếp video cũ (Deep Append)** — Bắt kịp siêu tốc qua video cũ (Catch-Up Phase) để quét sâu lấy thêm video cũ hơn.
 * 🔄 **Thu thập lại từ đầu** — Xóa cache cũ và quét lại toàn bộ danh sách.
 * 💾 **Hệ thống Checkpoint** — Tự động lưu tiến trình quét, chống mất dữ liệu khi gián đoạn.
+* 🩹 **Hồi sinh video (Batch Healing)** — Tự động quét và cập nhật lại link stream cho các video cũ bị hỏng.
 * 📤 **Xuất Backup (.json)** — Sao lưu bền vững danh sách video (Canonical URL) và Blacklist.
 * 📥 **Nhập Backup (.json)** — Khôi phục kho video 3.000+ tức thì không cần quét lại từ đầu.
 
@@ -52,7 +58,7 @@ Extension Chrome/Edge cao cấp giúp bạn **thưởng thức ngẫu nhiên kho
 ### 1. Tải Extension
 Clone hoặc tải mã nguồn về máy:
 ```bash
-git clone https://github.com/Ducinviciable/tiktok-random-video.git
+git clone https://github.com/Ducinviciable/TikTok-Random-Video.git
 ```
 
 ### 2. Cài đặt vào Chrome / Edge / Brave
@@ -61,7 +67,7 @@ git clone https://github.com/Ducinviciable/tiktok-random-video.git
    - **Edge**: `edge://extensions/`
    - **Brave**: `brave://extensions/`
 2. Bật công tắc **Developer mode (Chế độ dành cho nhà phát triển)** ở góc trên bên phải.
-3. Nhấn **Load unpacked (Tải tiện ích đã giải nén)** và chọn thư mục `TikTok-Random-Liked`.
+3. Nhấn **Load unpacked (Tải tiện ích đã giải nén)** và chọn thư mục `TikTok-Random-Video`.
 4. Ghim extension lên thanh công cụ trình duyệt.
 
 ---
@@ -106,37 +112,52 @@ git clone https://github.com/Ducinviciable/tiktok-random-video.git
 ## 📁 Cấu Trúc Dự Án
 
 ```text
-TikTok-Random-Liked/
-├── manifest.json                  # Manifest V3 Configuration
-├── background.js                  # Service Worker Router & Event Dispatcher
-├── content.js                     # Content Script Entry Point
-├── player.html                    # Giao diện TikTok Hi-Fi Studio độc lập
-├── style-player.css               # Hệ thống Style Glassmorphism & Audio Animations
-├── popup.html                     # Giao diện Popup điều khiển
-├── popup.js                       # Logic điều khiển Popup chính
-├── style.css                      # Style giao diện Popup
-├── icons/                         # Bộ Icon nhận diện (16px, 48px, 128px)
+TikTok-Random-Video/
+├── manifest.json                  
+├── background.js                  
+├── content.js                     
+├── player.html                    
+├── style-player.css               
+├── popup.html                     
+├── popup.js                       
+├── style.css                      
+├── icons/                         
 ├── js/
 │   ├── background/
-│   │   ├── bg-playback.js         # Quản lý điều hướng ngẫu nhiên & SPA Navigation
-│   │   ├── bg-collections.js      # Điều phối chu trình cuộn & thu thập Liked
-│   │   ├── bg-storage.js          # Quản lý Cache, Checkpoint, Export/Import
-│   │   ├── bg-recovery.js         # Phục hồi lỗi 403 & Watchdog giám sát tab
-│   │   └── bg-player.js           # JIT Silent Fetch Engine & DNR Header Isolator
+│   │   ├── bg-playback.js
+│   │   ├── bg-collections.js
+│   │   ├── bg-storage.js
+│   │   ├── bg-recovery.js
+│   │   ├── bg-fallback.js
+│   │   └── bg-player.js
 │   ├── player/
-│   │   ├── player-app.js          # Khởi tạo giao diện, Queue, Drag-Drop JSON v3.1
-│   │   ├── player-audio.js        # Web Audio DSP, 10-Band EQ, Bass Boost, Crossfade
-│   │   └── player-cdn-refresh.js  # JIT Caching & Client-side Stream Refresh
+│   │   ├── player-app.js
+│   │   ├── player-audio.js
+│   │   ├── player-audio-dsp.js
+│   │   ├── player-cdn-refresh.js
+│   │   ├── player-state.js
+│   │   └── player-ui.js
 │   ├── popup/
-│   │   ├── popup-api.js           # Giao tiếp tin nhắn giữa Popup và Background
-│   │   ├── popup-list.js          # Render danh sách video có thumbnail trong popup
-│   │   └── popup-backup.js        # Logic Xuất/Nhập file JSON sao lưu
+│   │   ├── popup-api.js
+│   │   ├── popup-list.js
+│   │   └── popup-backup.js
 │   └── content/
-│       ├── crawler/               # Quét DOM, Checkpoint & Cuộn tự động
-│       ├── stealth/               # Đánh chặn telemetry, Anti-debugging & Chống ẩn danh
-│       ├── behavior/              # Giả lập hành vi chuột Human-like & Micro-scroll
-│       └── video/                 # Giám sát Playback, Loop Guardian, Soft Recovery
-└── docs/                          # Tài liệu kỹ thuật, sơ đồ luồng & hướng dẫn chi tiết
+│       ├── crawler/
+│       │   ├── selectors.js
+│       │   ├── content-utils.js
+│       │   ├── content-checkpoint.js
+│       │   └── content-core.js
+│       ├── stealth/
+│       │   ├── content-stealth.js
+│       │   └── content-interceptor.js
+│       ├── behavior/
+│       │   └── content-behavior.js
+│       ├── video/
+│       │   ├── content-video-recovery.js
+│       │   ├── content-video-smart.js
+│       │   └── content-video-watcher.js
+│       └── content-cdn-bridge.js
+└── docs/
 ```
 
 ---
