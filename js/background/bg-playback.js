@@ -214,7 +214,7 @@ async function handleSkipAndPlayNext() {
   if (filtered.length > 0) {
     const result = await selectRandomVideo(currentUrl);
     if (result) {
-      await randomDelay(800, 2000);
+      await randomDelay(800, 1500);
       const nextUrl = getUrl(result.video);
       try {
         await chrome.tabs.sendMessage(tab.id, {
@@ -287,7 +287,7 @@ async function handleBanAndPlayNext() {
   if (videos.length > 0) {
     const result = await selectRandomVideo(currentUrl);
     if (result) {
-      await randomDelay(500, 1500);
+      await randomDelay(500, 1000);
       const nextUrl = getUrl(result.video);
       try {
         await chrome.tabs.sendMessage(tab.id, {
@@ -386,7 +386,7 @@ async function handlePlayNext(tabId) {
 
   const result = await selectRandomVideo(currentUrl);
   if (result) {
-    await randomDelay(1500, 3500);
+    await randomDelay(2000, 3200);
     const nextUrl = getUrl(result.video);
     try {
       await chrome.tabs.sendMessage(tabId, {

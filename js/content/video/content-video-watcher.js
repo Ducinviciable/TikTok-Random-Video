@@ -11,6 +11,21 @@ function isMatchingTikTokVideo(url1, url2) {
   return clean1 === clean2;
 }
 
+function isCurrentVideoInLikedOrHealing(data, currentUrl) {
+  if (!currentUrl) return false;
+  if (data.healingModeActive && data.healingQueue && data.healingQueue.length > 0) {
+    var inHealing = data.healingQueue.some(function (h) {
+      return h && h.url && isMatchingTikTokVideo(h.url, currentUrl);
+    });
+    if (inHealing) return true;
+  }
+  var liked = data.likedVideos || [];
+  return liked.some(function (item) {
+    var u = typeof item === "string" ? item : item ? item.url : "";
+    return isMatchingTikTokVideo(u, currentUrl);
+  });
+}
+
 function watchForVideoElement() {
   const videos = document.querySelectorAll("video");
   if (videos.length === 0) return;
@@ -46,6 +61,8 @@ function watchForVideoElement() {
   if (currentVideoElement) {
     currentVideoElement.removeEventListener("ended", onVideoEnded);
     currentVideoElement.removeEventListener("timeupdate", onVideoTimeUpdate);
+    currentVideoElement.removeEventListener("pause", onVideoUserPause);
+    currentVideoElement.removeEventListener("play", onVideoUserPlay);
   }
   if (loopObserver) {
     loopObserver.disconnect();
@@ -53,6 +70,7 @@ function watchForVideoElement() {
   }
 
   currentVideoElement = targetVideo;
+  userManuallyPaused = false;
   playNextRequested = false;
   timeUpdateTriggered = false;
   lastTimeForLoop = -1;
@@ -143,10 +161,6 @@ function watchForVideoElement() {
       currentVideoElement &&
       !currentVideoElement.ended
     ) {
-      console.log("[CS] ⚡ waiting event → bump currentTime + play()");
-      try {
-        currentVideoElement.currentTime += 0.01;
-      } catch (e) { }
       var p = currentVideoElement.play();
       if (p && p.then) {
         p.catch(function () { });
@@ -201,36 +215,70 @@ function watchForVideoElement() {
     attributeFilter: ["loop"],
   });
 
+  currentVideoElement.addEventListener("pause", onVideoUserPause);
+  currentVideoElement.addEventListener("play", onVideoUserPlay);
   currentVideoElement.addEventListener("timeupdate", onVideoTimeUpdate);
   currentVideoElement.addEventListener("ended", onVideoEnded);
 }
 
+function onVideoUserPause() {
+  if (document.hasFocus() && !playNextRequested) {
+    userManuallyPaused = true;
+  }
+}
+
+function onVideoUserPlay() {
+  userManuallyPaused = false;
+}
+
 function initVideoWatcher() {
-  chrome.storage.local.get(["autoNextEnabled", "healingModeActive"], function (data) {
-    if (data.autoNextEnabled === false) return;
-    if (!window.location.href.includes("/video/")) return;
+  chrome.storage.local.get(
+    ["autoNextEnabled", "healingModeActive", "healingQueue", "likedVideos"],
+    function (data) {
+      if (data.autoNextEnabled === false) return;
+      if (!window.location.href.includes("/video/")) return;
 
-    videoWatcherActive = true;
-    _checkAndHealVideo();
-    watchForVideoElement();
-
-    if (!currentVideoElement) {
-      let attempts = 0;
-      const checkInterval = setInterval(function () {
-        watchForVideoElement();
-        attempts++;
-        if (currentVideoElement || !videoWatcherActive) {
-          clearInterval(checkInterval);
-        } else if (attempts > 30) {
-          clearInterval(checkInterval);
-          if (data.healingModeActive && !playNextRequested) {
-            console.log("[CS] ⚡ Batch Healing: Video load timeout → Bỏ qua video");
-            requestNextVideo();
-          }
+      if (!isCurrentVideoInLikedOrHealing(data, window.location.href)) {
+        videoWatcherActive = false;
+        if (loopObserver) {
+          loopObserver.disconnect();
+          loopObserver = null;
         }
-      }, 500);
-    }
-  });
+        if (currentVideoElement) {
+          currentVideoElement.removeEventListener("ended", onVideoEnded);
+          currentVideoElement.removeEventListener(
+            "timeupdate",
+            onVideoTimeUpdate,
+          );
+          currentVideoElement.removeEventListener("pause", onVideoUserPause);
+          currentVideoElement.removeEventListener("play", onVideoUserPlay);
+          currentVideoElement = null;
+        }
+        return;
+      }
+
+      videoWatcherActive = true;
+      _checkAndHealVideo();
+      watchForVideoElement();
+
+      if (!currentVideoElement) {
+        let attempts = 0;
+        const checkInterval = setInterval(function () {
+          watchForVideoElement();
+          attempts++;
+          if (currentVideoElement || !videoWatcherActive) {
+            clearInterval(checkInterval);
+          } else if (attempts > 30) {
+            clearInterval(checkInterval);
+            if (data.healingModeActive && !playNextRequested) {
+              console.log("[CS] ⚡ Batch Healing: Video load timeout → Bỏ qua video");
+              requestNextVideo();
+            }
+          }
+        }, 500);
+      }
+    },
+  );
 }
 
 function _isPageVideoUnavailable() {

@@ -85,13 +85,20 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
       initVideoWatcher();
     } else {
       videoWatcherActive = false;
+      if (loopObserver) {
+        loopObserver.disconnect();
+        loopObserver = null;
+      }
       if (currentVideoElement) {
-        currentVideoElement.setAttribute("loop", "");
         currentVideoElement.removeEventListener("ended", onVideoEnded);
         currentVideoElement.removeEventListener(
           "timeupdate",
           onVideoTimeUpdate,
         );
+        if (typeof onVideoUserPause === "function") {
+          currentVideoElement.removeEventListener("pause", onVideoUserPause);
+          currentVideoElement.removeEventListener("play", onVideoUserPlay);
+        }
         currentVideoElement = null;
       }
     }

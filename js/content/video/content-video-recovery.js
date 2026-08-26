@@ -8,8 +8,9 @@
   var pleaseWaitStartTime = null;
 
   setInterval(function () {
+    if (!videoWatcherActive || !currentVideoElement) return;
     if (!window.location.href.includes("/video/")) return;
-    if (playNextRequested) return;
+    if (playNextRequested || userManuallyPaused) return;
 
     var videos = document.querySelectorAll("video");
     for (var i = 0; i < videos.length; i++) {
