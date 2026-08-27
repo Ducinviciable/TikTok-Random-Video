@@ -144,6 +144,11 @@
     if (recentlyPlayed.length > RECENT_BUFFER_SIZE) recentlyPlayed.shift();
   }
 
+  function removeRecentlyPlayed(id) {
+    const idx = recentlyPlayed.indexOf(id);
+    if (idx !== -1) recentlyPlayed.splice(idx, 1);
+  }
+
   function loadTracks(data, source) {
     try {
       const { tracks, bannedCount } = parseExtensionBackup(data);
@@ -302,6 +307,7 @@
     parseExtensionBackup,
     shuffleArray,
     pushRecentlyPlayed,
+    removeRecentlyPlayed,
     loadTracks,
     tryLoadFromStorage,
     loadStoredPreferences,

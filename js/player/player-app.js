@@ -192,19 +192,56 @@
     const visible = visibleTracks();
     if (!visible.length) return null;
     if (state.shuffled) {
-      const pool = visible.filter(t => !PlayerState.recentlyPlayed.includes(t.id));
-      const candidates = pool.length > 0 ? pool : visible;
-      return candidates[Math.floor(Math.random() * candidates.length)];
+      const pool = visible.filter(t => !PlayerState.recentlyPlayed.includes(t.id) && t.id !== state.activeId);
+      const candidates = pool.length > 0 ? pool : visible.filter(t => t.id !== state.activeId);
+      const finalCandidates = candidates.length > 0 ? candidates : visible;
+      return finalCandidates[Math.floor(Math.random() * finalCandidates.length)];
     }
     const idx = visible.findIndex(t => t.id === state.activeId);
-    return visible[(idx + 1) % visible.length];
+    if (idx !== -1) {
+      return visible[(idx + 1) % visible.length];
+    }
+    const origIdx = state.tracks.findIndex(t => t.id === state.activeId);
+    if (origIdx !== -1) {
+      for (let i = origIdx + 1; i < state.tracks.length; i++) {
+        const candidate = state.tracks[i];
+        if (!state.blacklisted.has(candidate.id)) {
+          return candidate;
+        }
+      }
+      for (let i = 0; i < origIdx; i++) {
+        const candidate = state.tracks[i];
+        if (!state.blacklisted.has(candidate.id)) {
+          return candidate;
+        }
+      }
+    }
+    return visible[0];
   }
 
   function getPrevTrackToPlay() {
     const visible = visibleTracks();
     if (!visible.length) return null;
     const idx = visible.findIndex(t => t.id === state.activeId);
-    return visible[(idx - 1 + visible.length) % visible.length];
+    if (idx !== -1) {
+      return visible[(idx - 1 + visible.length) % visible.length];
+    }
+    const origIdx = state.tracks.findIndex(t => t.id === state.activeId);
+    if (origIdx !== -1) {
+      for (let i = origIdx - 1; i >= 0; i--) {
+        const candidate = state.tracks[i];
+        if (!state.blacklisted.has(candidate.id)) {
+          return candidate;
+        }
+      }
+      for (let i = state.tracks.length - 1; i > origIdx; i--) {
+        const candidate = state.tracks[i];
+        if (!state.blacklisted.has(candidate.id)) {
+          return candidate;
+        }
+      }
+    }
+    return visible[visible.length - 1];
   }
 
   function handleTrackEnded() {
@@ -323,7 +360,20 @@
   }
 
   function banTrack(id) {
+    const isCurrent = (id === state.activeId);
+    let nextTrackToPlay = null;
+
+    if (isCurrent) {
+      nextTrackToPlay = getNextTrackToPlay();
+      if (nextTrackToPlay && nextTrackToPlay.id === id) {
+        nextTrackToPlay = null;
+      }
+    }
+
     state.blacklisted.add(id);
+    if (PlayerState.removeRecentlyPlayed) {
+      PlayerState.removeRecentlyPlayed(id);
+    }
 
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.local.get(['blacklistedVideos', 'likedVideos'], data => {
@@ -342,7 +392,16 @@
     }
 
     PlayerUI.showToast('🚫 Video đã được thêm vào danh sách cấm');
-    if (id === state.activeId) nextTrack();
+    if (isCurrent) {
+      if (nextTrackToPlay) {
+        selectAndPlay(nextTrackToPlay.id);
+      } else {
+        if (window.PlayerAudio) PlayerAudio.stopAll();
+        state.playing = false;
+        state.activeId = null;
+        pausePlayState();
+      }
+    }
     PlayerUI.refreshUI();
   }
 
