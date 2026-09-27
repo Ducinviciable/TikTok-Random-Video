@@ -65,6 +65,7 @@ var currentVideoElement = null;
 var timeUpdateTriggered = false;
 var playNextRequested = false;
 var loopObserver = null;
+var userManuallyPaused = false;
 
 // High-capacity collection & checkpoint state variables
 var isDeepAppend = false;

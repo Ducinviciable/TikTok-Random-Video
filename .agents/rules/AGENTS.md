@@ -20,10 +20,19 @@
 1. **NEVER Delete Akamai Cookies**: Do NOT touch cookies matching `_abck`, `bm_`, `rate`, `limit`. They are Akamai Bot Manager authorization tokens. Deleting them triggers **403 Access Denied**.
 2. **NEVER Use `chrome.tabs.update()` for Video Navigation**: Use SPA navigation via `chrome.tabs.sendMessage(tabId, { action: "navigateToVideo", url })` (`window.location.href = url`). Only use `tabs.update()` as a fallback if the content script is unreachable.
 3. **NEVER Auto-Blacklist on HTTP 403**: 403 is WAF rate-limiting, not a broken video. Only the user can manually ban videos.
-4. **NEVER Remove `loop` Logic**: The `loop` attribute on `<video>` prevents TikTok feed auto-advance. Keep the `MutationObserver` that re-adds `loop` if TikTok removes it.
-5. **NEVER Full-Reload Tab for Recovery**: Do NOT call `location.reload()` or `chrome.tabs.reload()`. Use `navigateToVideo` to switch to a different video URL instead.
-6. **NEVER Skip Video Under 2 Seconds**: Enforce a minimum 2-second delay (`requestNextVideo` throttle) between video transitions to prevent rapid jumping.
-7. **Keep Realistic Delays**: Maintain `randomDelay()` minimums (`handlePlayNext`: 4–9s, `handleSkipAndPlayNext`: 2–4s, `handleBanAndPlayNext`: 1–3s). Shorter delays trigger rate-limiting.
+4. **NEVER Hijack User Experience Outside Liked Videos**:
+   - Extension ONLY controls playback for videos in `likedVideos` (or `healingQueue`).
+   - When the user watches normal TikTok videos (FYP, profile, search), the content script MUST remain 100% passive: NO auto-next, NO forced `loop`, NO pause/play intervention, NO early skip, and NO forced navigation.
+   - NEVER override user's manual pause/play actions.
+5. **NEVER Remove `loop` Logic on Liked Videos**: The `loop` attribute on `<video>` prevents TikTok feed auto-advance during random liked playback. Keep the `MutationObserver` that re-adds `loop` if TikTok removes it (applies strictly to Liked Videos).
+6. **NEVER Micro-Seek on Video Buffering**: Do NOT modify `currentTime` (`currentTime += 0.01` or similar) in `waiting` or `stalled` event handlers. Seeking flushes the browser media buffer and causes severe stutter/jittering.
+7. **NEVER Full-Reload Tab for Recovery**: Do NOT call `location.reload()` or `chrome.tabs.reload()`. Use `navigateToVideo` to switch to a different video URL instead.
+8. **NEVER Skip Video Under 2 Seconds**: Enforce a minimum 2-second delay (`requestNextVideo` throttle) between automatic video transitions to prevent rapid jumping.
+9. **Keep Realistic & User-Friendly Delays**:
+   - `handlePlayNext` (Auto-Next): Maintain `randomDelay(2000, 3200)` (2.0s – 3.2s). Shorter (< 2s) triggers Akamai WAF rate-limiting; longer (> 3.5s) causes frustrating muted playback lag.
+   - `handleSkipAndPlayNext` (User Skip): `randomDelay(800, 1500)` (0.8s – 1.5s) for responsive user feedback.
+   - `handleBanAndPlayNext` (User Ban): `randomDelay(500, 1000)` (0.5s – 1.0s) for responsive user feedback.
+   - **Mute Timing**: Do NOT mute audio seconds in advance. Only mute immediately before SPA navigation to preserve audio continuity.
 
 ---
 

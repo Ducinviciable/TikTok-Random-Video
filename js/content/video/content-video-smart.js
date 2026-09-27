@@ -1,9 +1,9 @@
 // Module: content-video-smart.js
 // Responsibilities: Smart Preloading 70%, Video End & Loop-Reset Timing Detection, Early Interest Simulation, 2s Throttle & Navigation Dispatcher
 
-var EARLY_SKIP_CHANCE = 0.10; // 10% probability of low interest
-var EARLY_SKIP_MIN_RATIO = 0.40; // Skip between 40%
-var EARLY_SKIP_MAX_RATIO = 0.80; // and 70% of duration
+var EARLY_SKIP_CHANCE = 0.06; // 6% probability of low interest
+var EARLY_SKIP_MIN_RATIO = 0.45; // Skip between 45%
+var EARLY_SKIP_MAX_RATIO = 0.80; // and 80% of duration
 var preloadAttempted = false;
 var isLowInterestVideo = false;
 var earlySkipTargetRatio = 0;
@@ -194,7 +194,6 @@ function onVideoTimeUpdate() {
       triggerHumanMouseNudge("video_transition");
     }
 
-    video.muted = true;
     var otherVidsEarly = document.querySelectorAll("video");
     for (var k1 = 0; k1 < otherVidsEarly.length; k1++) {
       if (otherVidsEarly[k1] !== video) {
@@ -239,7 +238,6 @@ function onVideoTimeUpdate() {
       triggerHumanMouseNudge("video_end");
     }
 
-    video.muted = true;
     var otherVidsEnd = document.querySelectorAll("video");
     for (var k2 = 0; k2 < otherVidsEnd.length; k2++) {
       if (otherVidsEnd[k2] !== video) {
@@ -251,7 +249,7 @@ function onVideoTimeUpdate() {
     console.log(
       "[CS] Video gần hết (" +
       remaining.toFixed(2) +
-      "s còn lại) → Mute & chuyển video ngẫu nhiên",
+      "s còn lại) → Chuyển video ngẫu nhiên",
     );
     requestNextVideo();
     lastTimeForLoop = -1;
@@ -278,7 +276,6 @@ function onVideoTimeUpdate() {
       triggerHumanMouseNudge("video_transition");
     }
 
-    video.muted = true;
     var otherVidsLoop = document.querySelectorAll("video");
     for (var k3 = 0; k3 < otherVidsLoop.length; k3++) {
       if (otherVidsLoop[k3] !== video) {
